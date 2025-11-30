@@ -39,10 +39,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const signup = useCallback(
     async (data: { email: string; password: string; firstName: string; lastName: string }) => {
       try {
-        await mobileAuthAPI.signup(data);
-        router.push('/auth/verify-email');
+        const result = await mobileAuthAPI.signup(data);
+        // Don't navigate automatically - let the UI handle it
+        return result;
       } catch (error: any) {
-        throw new Error(error.response?.data?.message || 'Failed to create account');
+        throw error; // Re-throw to let the UI handle the error message
       }
     },
     [],

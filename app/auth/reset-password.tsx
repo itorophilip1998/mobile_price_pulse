@@ -92,8 +92,7 @@ export default function ResetPasswordScreen() {
             <TextInput
               style={[
                 styles.input,
-                passwordFocused && styles.inputFocused,
-                hasPasswordValue && styles.inputFilled,
+                passwordFocused ? styles.inputFocused : null,
               ]}
               placeholder=""
               placeholderTextColor="transparent"
@@ -107,7 +106,9 @@ export default function ResetPasswordScreen() {
             <Text
               style={[
                 styles.floatingLabel,
+                passwordFocused && styles.floatingLabelFocused,
                 (passwordFocused || hasPasswordValue) && styles.floatingLabelActive,
+                !passwordFocused && hasPasswordValue && styles.floatingLabelInactive,
               ]}
             >
               New Password
@@ -124,8 +125,7 @@ export default function ResetPasswordScreen() {
             <TextInput
               style={[
                 styles.input,
-                confirmPasswordFocused && styles.inputFocused,
-                hasConfirmPasswordValue && styles.inputFilled,
+                confirmPasswordFocused ? styles.inputFocused : null,
               ]}
               placeholder=""
               placeholderTextColor="transparent"
@@ -139,7 +139,9 @@ export default function ResetPasswordScreen() {
             <Text
               style={[
                 styles.floatingLabel,
+                confirmPasswordFocused && styles.floatingLabelFocused,
                 (confirmPasswordFocused || hasConfirmPasswordValue) && styles.floatingLabelActive,
+                !confirmPasswordFocused && hasConfirmPasswordValue && styles.floatingLabelInactive,
               ]}
             >
               Confirm Password
@@ -230,38 +232,42 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 20,
     paddingHorizontal: 24,
-    paddingVertical: 28,
-    paddingTop: 36,
+    paddingTop: 28,
+    paddingBottom: 16,
     paddingRight: 70,
-    fontSize: 20,
+    fontSize: 18,
     color: '#111827',
     height: 80,
   },
   inputFocused: {
     borderColor: '#667eea',
-  },
-  inputFilled: {
-    borderColor: '#667eea',
+    borderWidth: 1,
   },
   floatingLabel: {
     position: 'absolute',
     left: 24,
     top: 28,
-    fontSize: 20,
+    fontSize: 18,
     color: '#9CA3AF',
     pointerEvents: 'none',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 4,
+    zIndex: 1,
+  },
+  floatingLabelFocused: {
+    color: '#667eea',
   },
   floatingLabelActive: {
-    top: 14,
-    fontSize: 14,
-    color: '#667eea',
+    top: 8,
+    fontSize: 12,
     fontWeight: '600',
+  },
+  floatingLabelInactive: {
+    color: '#9CA3AF',
   },
   eyeButton: {
     position: 'absolute',

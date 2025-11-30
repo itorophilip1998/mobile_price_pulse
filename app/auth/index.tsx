@@ -10,18 +10,23 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Animated,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/hooks/use-auth';
 import { router, useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { GradientText } from '@/components/gradient-text';
+
+// Complete Google OAuth web browser session
+WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthScreen() {
   const [isSignup, setIsSignup] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { signup, signin, isAuthenticated } = useAuth();
   const routerHook = useRouter();
@@ -31,6 +36,29 @@ export default function AuthScreen() {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
 
+  // Google OAuth - Use centralized config
+  const { GOOGLE_OAUTH_CONFIG, isGoogleOAuthConfigured } = require('@/lib/config');
+  
+  const isGoogleConfigured = isGoogleOAuthConfigured(Platform.OS as 'ios' | 'android' | 'web');
+
+  // Only initialize Google OAuth if properly configured
+  const googleConfig = isGoogleConfigured
+    ? {
+        clientId: GOOGLE_OAUTH_CONFIG.WEB_CLIENT_ID,
+        iosClientId: GOOGLE_OAUTH_CONFIG.IOS_CLIENT_ID,
+        androidClientId: GOOGLE_OAUTH_CONFIG.ANDROID_CLIENT_ID,
+      }
+    : null;
+
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    googleConfig || {
+      // Provide dummy values to prevent errors, but it won't work
+      clientId: 'dummy',
+      iosClientId: Platform.OS === 'ios' ? 'dummy' : undefined,
+      androidClientId: Platform.OS === 'android' ? 'dummy' : undefined,
+    }
+  );
+
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
@@ -38,40 +66,146 @@ export default function AuthScreen() {
     }
   }, [isAuthenticated]);
 
+  // Handle Google OAuth response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      handleGoogleSignIn(authentication?.accessToken);
+    } else if (response?.type === 'error') {
+      Alert.alert('Error', 'Google sign in failed. Please try again.');
+    }
+  }, [response]);
+
   const handleSubmit = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
-    if (isSignup && (!firstName || !lastName)) {
-      Alert.alert('Error', 'Please fill in your name');
+    if (isSignup) {
+      // Better name validation
+      const trimmedFullName = fullName.trim();
+      if (!trimmedFullName || trimmedFullName.length < 2) {
+        Alert.alert('Error', 'Please enter your full name');
+        return;
+      }
+      
+      // Ensure we have both first and last name
+      const nameParts = trimmedFullName.split(/\s+/).filter(part => part.length > 0);
+      if (nameParts.length < 2) {
+        Alert.alert('Error', 'Please enter both first and last name');
+        return;
+      }
+      
+      const finalFirstName = nameParts[0];
+      const finalLastName = nameParts.slice(1).join(' ');
+      
+      if (!finalFirstName || !finalLastName) {
+        Alert.alert('Error', 'Please enter both first and last name');
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        await signup({ email, password, firstName: finalFirstName, lastName: finalLastName });
+        Alert.alert('Success', 'Account created successfully! Please check your email to verify your account.');
+        router.push('/auth/verify-email');
+      } catch (error: any) {
+        console.error('Signup error:', error);
+        const errorMessage = error.message || error.response?.data?.message || 'Failed to create account. Please try again.';
+        Alert.alert('Error', errorMessage);
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      setIsLoading(true);
+      try {
+        await signin(email, password);
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Authentication failed');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Helper function for strength color
+  const getStrengthColor = (strength: 'weak' | 'acceptable' | 'good' | 'strong'): string => {
+    switch (strength) {
+      case 'weak':
+        return '#EF4444';
+      case 'acceptable':
+        return '#F59E0B';
+      case 'good':
+        return '#3B82F6';
+      case 'strong':
+        return '#10B981';
+      default:
+        return '#9CA3AF';
+    }
+  };
+
+  const handleGoogleSignIn = async (accessToken?: string) => {
+    if (!isGoogleConfigured) {
+      Alert.alert('Not Available', 'Google sign in is not configured. Please set up Google OAuth credentials.');
       return;
     }
 
-    setIsLoading(true);
-    try {
-      if (isSignup) {
-        await signup({ email, password, firstName, lastName });
-        router.push('/auth/verify-email');
-      } else {
-        await signin(email, password);
+    if (!accessToken) {
+      if (!request) {
+        Alert.alert('Error', 'Google sign in is not ready');
+        return;
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Authentication failed');
-    } finally {
-      setIsLoading(false);
+      try {
+        await promptAsync();
+      } catch (error: any) {
+        Alert.alert('Error', 'Failed to initiate Google sign in');
+      }
+      return;
     }
+
+    // TODO: Send accessToken to backend for verification and token exchange
+    Alert.alert('Info', 'Google sign in will be fully implemented with backend integration');
   };
 
-  const handleGoogleSignIn = () => {
-    // TODO: Implement Google OAuth
-    Alert.alert('Coming Soon', 'Google sign in will be available soon');
-  };
-
-  const hasNameValue = `${firstName} ${lastName}`.trim().length > 0;
+  const hasNameValue = fullName.trim().length > 0;
   const hasEmailValue = email.length > 0;
   const hasPasswordValue = password.length > 0;
+
+  // Password strength checker
+  const getPasswordStrength = (pwd: string): { strength: 'weak' | 'acceptable' | 'good' | 'strong'; score: number } => {
+    if (!pwd) return { strength: 'weak', score: 0 };
+    
+    let score = 0;
+    const checks = {
+      length: pwd.length >= 8,
+      uppercase: /[A-Z]/.test(pwd),
+      lowercase: /[a-z]/.test(pwd),
+      number: /\d/.test(pwd),
+      special: /[@$!%*?&]/.test(pwd),
+    };
+
+    if (checks.length) score += 1;
+    if (checks.uppercase) score += 1;
+    if (checks.lowercase) score += 1;
+    if (checks.number) score += 1;
+    if (checks.special) score += 1;
+
+    if (score <= 2) return { strength: 'weak', score };
+    if (score === 3) return { strength: 'acceptable', score };
+    if (score === 4) return { strength: 'good', score };
+    return { strength: 'strong', score };
+  };
+
+  // Password rules checker
+  const passwordRules = {
+    length: password.length >= 8,
+    case: /[A-Z]/.test(password) && /[a-z]/.test(password),
+    numberSpecial: /\d/.test(password) && /[@$!%*?&]/.test(password),
+  };
+
+  const passwordStrength = getPasswordStrength(password);
+  const showPasswordIndicator = isSignup && (passwordFocused || hasPasswordValue);
 
   return (
     <KeyboardAvoidingView
@@ -85,9 +219,13 @@ export default function AuthScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.logo}>PricePulse AI</Text>
+          <View style={styles.logoContainer}>
+            <Text style={styles.logo}>Price</Text>
+            <GradientText style={styles.logoGradient}>Pulse</GradientText>
+            <Text style={styles.logo}> AI</Text>
+          </View>
           <Text style={styles.tagline}>
-          {isSignup
+            {isSignup
               ? 'Join thousands of smart shoppers'
               : 'Sign in to continue to PricePulse AI'}
           </Text>
@@ -95,28 +233,17 @@ export default function AuthScreen() {
 
         {/* Auth Form - Full Screen */}
         <View style={styles.formContainer}>
-          {/* <Text style={styles.subtitle}>
-            {isSignup
-              ? 'Join thousands of smart shoppers'
-              : 'Sign in to continue to PricePulse AI'}
-          </Text> */}
-
           {isSignup && (
             <View style={styles.inputWrapper}>
               <TextInput
                 style={[
                   styles.input,
-                  nameFocused && styles.inputFocused,
-                  hasNameValue && styles.inputFilled,
+                  nameFocused ? styles.inputFocused : null,
                 ]}
                 placeholder=""
                 placeholderTextColor="transparent"
-                value={`${firstName} ${lastName}`.trim() || ''}
-                onChangeText={(text) => {
-                  const parts = text.trim().split(' ');
-                  setFirstName(parts[0] || '');
-                  setLastName(parts.slice(1).join(' ') || '');
-                }}
+                value={fullName}
+                onChangeText={setFullName}
                 onFocus={() => setNameFocused(true)}
                 onBlur={() => setNameFocused(false)}
                 autoCapitalize="words"
@@ -125,7 +252,9 @@ export default function AuthScreen() {
               <Text
                 style={[
                   styles.floatingLabel,
+                  nameFocused && styles.floatingLabelFocused,
                   (nameFocused || hasNameValue) && styles.floatingLabelActive,
+                  !nameFocused && hasNameValue && styles.floatingLabelInactive,
                 ]}
               >
                 Full Name
@@ -137,8 +266,7 @@ export default function AuthScreen() {
             <TextInput
               style={[
                 styles.input,
-                emailFocused && styles.inputFocused,
-                hasEmailValue && styles.inputFilled,
+                emailFocused ? styles.inputFocused : null,
               ]}
               placeholder=""
               placeholderTextColor="transparent"
@@ -154,7 +282,9 @@ export default function AuthScreen() {
             <Text
               style={[
                 styles.floatingLabel,
+                emailFocused && styles.floatingLabelFocused,
                 (emailFocused || hasEmailValue) && styles.floatingLabelActive,
+                !emailFocused && hasEmailValue && styles.floatingLabelInactive,
               ]}
             >
               Email Address
@@ -165,8 +295,7 @@ export default function AuthScreen() {
             <TextInput
               style={[
                 styles.input,
-                passwordFocused && styles.inputFocused,
-                hasPasswordValue && styles.inputFilled,
+                passwordFocused ? styles.inputFocused : null,
               ]}
               placeholder=""
               placeholderTextColor="transparent"
@@ -180,7 +309,9 @@ export default function AuthScreen() {
             <Text
               style={[
                 styles.floatingLabel,
+                passwordFocused && styles.floatingLabelFocused,
                 (passwordFocused || hasPasswordValue) && styles.floatingLabelActive,
+                !passwordFocused && hasPasswordValue && styles.floatingLabelInactive,
               ]}
             >
               Password
@@ -194,6 +325,49 @@ export default function AuthScreen() {
               </TouchableOpacity>
             )}
           </View>
+
+          {/* Password Strength Indicator - Only show on signup */}
+          {showPasswordIndicator && (
+            <View style={styles.passwordStrengthContainer}>
+              {/* Strength Bar */}
+              <View style={styles.strengthBarContainer}>
+                <View style={[styles.strengthBar, { width: `${(passwordStrength.score / 5) * 100}%`, backgroundColor: getStrengthColor(passwordStrength.strength) }]} />
+              </View>
+              
+              {/* Strength Text */}
+              <Text style={[styles.strengthText, { color: getStrengthColor(passwordStrength.strength) }]}>
+                {passwordStrength.strength.charAt(0).toUpperCase() + passwordStrength.strength.slice(1)}
+              </Text>
+
+              {/* Password Rules */}
+              <View style={styles.rulesContainer}>
+                <View style={styles.ruleItem}>
+                  <Text style={[styles.ruleIcon, passwordRules.length && styles.ruleIconValid]}>
+                    {passwordRules.length ? '✓' : '○'}
+                  </Text>
+                  <Text style={[styles.ruleText, passwordRules.length && styles.ruleTextValid]}>
+                    At least 8 characters
+                  </Text>
+                </View>
+                <View style={styles.ruleItem}>
+                  <Text style={[styles.ruleIcon, passwordRules.case && styles.ruleIconValid]}>
+                    {passwordRules.case ? '✓' : '○'}
+                  </Text>
+                  <Text style={[styles.ruleText, passwordRules.case && styles.ruleTextValid]}>
+                    Uppercase & lowercase letters
+                  </Text>
+                </View>
+                <View style={styles.ruleItem}>
+                  <Text style={[styles.ruleIcon, passwordRules.numberSpecial && styles.ruleIconValid]}>
+                    {passwordRules.numberSpecial ? '✓' : '○'}
+                  </Text>
+                  <Text style={[styles.ruleText, passwordRules.numberSpecial && styles.ruleTextValid]}>
+                    Number & special character
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Primary Button */}
           <TouchableOpacity
@@ -227,10 +401,15 @@ export default function AuthScreen() {
           {/* Google Button */}
           <TouchableOpacity
             style={styles.googleButton}
-            onPress={handleGoogleSignIn}
+            onPress={() => handleGoogleSignIn()}
             activeOpacity={0.7}
+            disabled={!request}
           >
-            <Text style={styles.googleIcon}>G</Text>
+            <Image
+              source={require('@/assets/images/googleG.png')}
+              style={styles.googleIcon}
+              resizeMode="contain"
+            />
             <Text style={styles.googleButtonText}>Continue with Google</Text>
           </TouchableOpacity>
 
@@ -267,12 +446,23 @@ const styles = StyleSheet.create({
     marginBottom: 56,
     marginTop: 24,
   },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
   logo: {
     fontSize: 36,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 8,
     letterSpacing: -0.5,
+  },
+  logoGradient: {
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    color: '#667eea',
   },
   tagline: {
     fontSize: 16,
@@ -283,50 +473,47 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginBottom: 48,
-    lineHeight: 24,
-    textAlign: 'center',
-  },
   inputWrapper: {
     marginBottom: 20,
     position: 'relative',
   },
   input: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 20,
     paddingHorizontal: 24,
-    paddingVertical: 28,
-    paddingTop: 36,
-    fontSize: 20,
+    paddingTop: 28,
+    paddingBottom: 16,
+    fontSize: 18,
     color: '#111827',
     height: 80,
   },
   inputFocused: {
     borderColor: '#667eea',
-  },
-  inputFilled: {
-    borderColor: '#667eea',
+    borderWidth: 1,
   },
   floatingLabel: {
     position: 'absolute',
     left: 24,
     top: 28,
-    fontSize: 20,
+    fontSize: 18,
     color: '#9CA3AF',
     pointerEvents: 'none',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 4,
+    zIndex: 1,
+  },
+  floatingLabelFocused: {
+    color: '#667eea',
   },
   floatingLabelActive: {
-    top: 14,
-    fontSize: 14,
-    color: '#667eea',
+    top: 8,
+    fontSize: 12,
     fontWeight: '600',
+  },
+  floatingLabelInactive: {
+    color: '#9CA3AF',
   },
   forgotPasswordLink: {
     alignSelf: 'flex-end',
@@ -380,16 +567,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 20,
     paddingVertical: 22,
     marginBottom: 20,
   },
   googleIcon: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#4285F4',
+    width: 24,
+    height: 24,
     marginRight: 14,
   },
   googleButtonText: {
@@ -400,7 +586,7 @@ const styles = StyleSheet.create({
   switchContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center', 
+    alignItems: 'center',
   },
   switchText: {
     fontSize: 16,
@@ -410,5 +596,57 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#667eea',
     fontWeight: '600',
+  },
+  passwordStrengthContainer: {
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  strengthBarContainer: {
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  strengthBar: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  strengthText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  rulesContainer: {
+    gap: 12,
+  },
+  ruleItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  ruleIcon: {
+    fontSize: 16,
+    width: 20,
+    textAlign: 'center',
+    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  ruleIconValid: {
+    color: '#10B981',
+  },
+  ruleText: {
+    fontSize: 14,
+    color: '#6B7280',
+    flex: 1,
+  },
+  ruleTextValid: {
+    color: '#374151',
+    fontWeight: '500',
   },
 });

@@ -103,8 +103,7 @@ export default function ForgotPasswordScreen() {
             <TextInput
               style={[
                 styles.input,
-                emailFocused && styles.inputFocused,
-                hasEmailValue && styles.inputFilled,
+                emailFocused ? styles.inputFocused : null,
               ]}
               placeholder=""
               placeholderTextColor="transparent"
@@ -120,7 +119,9 @@ export default function ForgotPasswordScreen() {
             <Text
               style={[
                 styles.floatingLabel,
+                emailFocused && styles.floatingLabelFocused,
                 (emailFocused || hasEmailValue) && styles.floatingLabelActive,
+                !emailFocused && hasEmailValue && styles.floatingLabelInactive,
               ]}
             >
               Email Address
@@ -233,37 +234,41 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 20,
     paddingHorizontal: 24,
-    paddingVertical: 28,
-    paddingTop: 36,
-    fontSize: 20,
+    paddingTop: 28,
+    paddingBottom: 16,
+    fontSize: 18,
     color: '#111827',
     height: 80,
   },
   inputFocused: {
     borderColor: '#667eea',
-  },
-  inputFilled: {
-    borderColor: '#667eea',
+    borderWidth: 1,
   },
   floatingLabel: {
     position: 'absolute',
     left: 24,
     top: 28,
-    fontSize: 20,
+    fontSize: 18,
     color: '#9CA3AF',
     pointerEvents: 'none',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 4,
+    zIndex: 1,
+  },
+  floatingLabelFocused: {
+    color: '#667eea',
   },
   floatingLabelActive: {
-    top: 14,
-    fontSize: 14,
-    color: '#667eea',
+    top: 8,
+    fontSize: 12,
     fontWeight: '600',
+  },
+  floatingLabelInactive: {
+    color: '#9CA3AF',
   },
   primaryButton: {
     borderRadius: 20,
