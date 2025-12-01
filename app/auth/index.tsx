@@ -4,20 +4,21 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
   Image,
+  Clipboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image as ExpoImage } from 'expo-image';
 import { useAuth } from '@/hooks/use-auth';
 import { router, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
-import { GradientText } from '@/components/gradient-text';
+import { useToast } from '@/components/ui/toast-provider';
 
 // Complete Google OAuth web browser session
 WebBrowser.maybeCompleteAuthSession();
@@ -29,6 +30,7 @@ export default function AuthScreen() {
   const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { signup, signin, isAuthenticated } = useAuth();
+  const { showToast } = useToast();
   const routerHook = useRouter();
 
   // Floating label animations
@@ -72,28 +74,73 @@ export default function AuthScreen() {
       const { authentication } = response;
       handleGoogleSignIn(authentication?.accessToken);
     } else if (response?.type === 'error') {
-      Alert.alert('Error', 'Google sign in failed. Please try again.');
+      showToast('Google sign in failed. Please try again.', 'error');
     }
   }, [response]);
 
+  // Validate email format
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Validate password strength
+  const validatePassword = (password: string): { valid: boolean; message?: string } => {
+    if (password.length < 8) {
+      return { valid: false, message: 'Password must be at least 8 characters long' };
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password)) {
+      return { valid: false, message: 'Password must contain both uppercase and lowercase letters' };
+    }
+    if (!/\d/.test(password) || !/[@$!%*?&]/.test(password)) {
+      return { valid: false, message: 'Password must contain at least one number and one special character' };
+    }
+    return { valid: true };
+  };
+
+  // Handle paste for TextInput
+  const handlePaste = async (setter: (value: string) => void) => {
+    try {
+      const clipboardContent = await Clipboard.getString();
+      if (clipboardContent) {
+        setter(clipboardContent.trim());
+        showToast('Pasted from clipboard', 'info', 2000);
+      }
+    } catch (error) {
+      // Clipboard access failed, ignore
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all required fields');
+    // Validate email
+    if (!email || !email.trim()) {
+      showToast('Please enter your email address', 'error');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      showToast('Please enter a valid email address', 'error');
+      return;
+    }
+
+    // Validate password
+    if (!password || !password.trim()) {
+      showToast('Please enter your password', 'error');
       return;
     }
 
     if (isSignup) {
-      // Better name validation
+      // Validate full name
       const trimmedFullName = fullName.trim();
       if (!trimmedFullName || trimmedFullName.length < 2) {
-        Alert.alert('Error', 'Please enter your full name');
+        showToast('Please enter your full name', 'error');
         return;
       }
       
       // Ensure we have both first and last name
       const nameParts = trimmedFullName.split(/\s+/).filter(part => part.length > 0);
       if (nameParts.length < 2) {
-        Alert.alert('Error', 'Please enter both first and last name');
+        showToast('Please enter both first and last name', 'error');
         return;
       }
       
@@ -101,28 +148,41 @@ export default function AuthScreen() {
       const finalLastName = nameParts.slice(1).join(' ');
       
       if (!finalFirstName || !finalLastName) {
-        Alert.alert('Error', 'Please enter both first and last name');
+        showToast('Please enter both first and last name', 'error');
+        return;
+      }
+
+      // Validate password strength
+      const passwordValidation = validatePassword(password);
+      if (!passwordValidation.valid) {
+        showToast(passwordValidation.message || 'Password does not meet requirements', 'error');
         return;
       }
 
       setIsLoading(true);
       try {
-        await signup({ email, password, firstName: finalFirstName, lastName: finalLastName });
-        Alert.alert('Success', 'Account created successfully! Please check your email to verify your account.');
-        router.push('/auth/verify-email');
+        const result = await signup({ email: email.trim(), password, firstName: finalFirstName, lastName: finalLastName });
+        // Store email for verification screen
+        const verifyEmailUrl = `/auth/verify-email?email=${encodeURIComponent(email.trim())}`;
+        showToast('Account created! Check your email for verification code', 'success');
+        setTimeout(() => {
+          router.push(verifyEmailUrl);
+        }, 1000);
       } catch (error: any) {
         console.error('Signup error:', error);
         const errorMessage = error.message || error.response?.data?.message || 'Failed to create account. Please try again.';
-        Alert.alert('Error', errorMessage);
+        showToast(errorMessage, 'error');
       } finally {
         setIsLoading(false);
       }
     } else {
       setIsLoading(true);
       try {
-        await signin(email, password);
+        await signin(email.trim(), password);
+        showToast('Signed in successfully!', 'success');
       } catch (error: any) {
-        Alert.alert('Error', error.message || 'Authentication failed');
+        const errorMessage = error.message || 'Authentication failed';
+        showToast(errorMessage, 'error');
       } finally {
         setIsLoading(false);
       }
@@ -147,25 +207,25 @@ export default function AuthScreen() {
 
   const handleGoogleSignIn = async (accessToken?: string) => {
     if (!isGoogleConfigured) {
-      Alert.alert('Not Available', 'Google sign in is not configured. Please set up Google OAuth credentials.');
+      showToast('Google sign in is not configured', 'error');
       return;
     }
 
     if (!accessToken) {
       if (!request) {
-        Alert.alert('Error', 'Google sign in is not ready');
+        showToast('Google sign in is not ready', 'error');
         return;
       }
       try {
         await promptAsync();
       } catch (error: any) {
-        Alert.alert('Error', 'Failed to initiate Google sign in');
+        showToast('Failed to initiate Google sign in', 'error');
       }
       return;
     }
 
     // TODO: Send accessToken to backend for verification and token exchange
-    Alert.alert('Info', 'Google sign in will be fully implemented with backend integration');
+    showToast('Google sign in will be fully implemented with backend integration', 'info');
   };
 
   const hasNameValue = fullName.trim().length > 0;
@@ -220,9 +280,11 @@ export default function AuthScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <Text style={styles.logo}>Price</Text>
-            <GradientText style={styles.logoGradient}>Pulse</GradientText>
-            <Text style={styles.logo}> AI</Text>
+            <ExpoImage
+              source={require('@/assets/images/applogo.png')}
+              style={styles.logoImage}
+              contentFit="contain"
+            />
           </View>
           <Text style={styles.tagline}>
             {isSignup
@@ -271,13 +333,26 @@ export default function AuthScreen() {
               placeholder=""
               placeholderTextColor="transparent"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                // Trim and validate email format as user types
+                setEmail(text.trim().toLowerCase());
+              }}
               onFocus={() => setEmailFocused(true)}
-              onBlur={() => setEmailFocused(false)}
+              onBlur={() => {
+                setEmailFocused(false);
+                // Validate email on blur
+                if (email && !validateEmail(email)) {
+                  showToast('Please enter a valid email address', 'error', 2000);
+                }
+              }}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="email"
+              onLongPress={async () => {
+                // Long press to paste
+                await handlePaste(setEmail);
+              }}
             />
             <Text
               style={[
@@ -302,9 +377,22 @@ export default function AuthScreen() {
               value={password}
               onChangeText={setPassword}
               onFocus={() => setPasswordFocused(true)}
-              onBlur={() => setPasswordFocused(false)}
+              onBlur={() => {
+                setPasswordFocused(false);
+                // Validate password on blur (only for signup)
+                if (isSignup && password) {
+                  const passwordValidation = validatePassword(password);
+                  if (!passwordValidation.valid) {
+                    showToast(passwordValidation.message || 'Password does not meet requirements', 'warning', 3000);
+                  }
+                }
+              }}
               secureTextEntry
               autoComplete={isSignup ? 'password-new' : 'password'}
+              onLongPress={async () => {
+                // Long press to paste
+                await handlePaste(setPassword);
+              }}
             />
             <Text
               style={[
@@ -447,22 +535,13 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   logoContainer: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
   },
-  logo: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#111827',
-    letterSpacing: -0.5,
-  },
-  logoGradient: {
-    fontSize: 36,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-    color: '#667eea',
+  logoImage: {
+    width: 200,
+    height: 60,
   },
   tagline: {
     fontSize: 16,

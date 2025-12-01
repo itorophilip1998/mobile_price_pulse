@@ -198,7 +198,12 @@ class MobileAuthAPI {
     }
   }
 
-  async verifyEmail(token: string): Promise<{ message: string }> {
+  async verifyEmail(token: string): Promise<{ 
+    message: string; 
+    accessToken?: string; 
+    refreshToken?: string; 
+    user?: any;
+  }> {
     const isHealthy = await this.ensureApiHealthy();
     if (!isHealthy) {
       throw new Error('API server is not reachable. Please check your connection and try again.');
@@ -217,6 +222,29 @@ class MobileAuthAPI {
                           error.response?.data?.error || 
                           error.message ||
                           'Failed to verify email';
+      throw new Error(errorMessage);
+    }
+  }
+
+  async resendVerificationEmail(email: string): Promise<{ message: string; verificationExpiresAt?: string }> {
+    const isHealthy = await this.ensureApiHealthy();
+    if (!isHealthy) {
+      throw new Error('API server is not reachable. Please check your connection and try again.');
+    }
+
+    try {
+      const response = await this.client.post('/resend-verification', { 
+        email: email.trim() 
+      });
+      return response.data;
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        this.isApiHealthy = false;
+      }
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message ||
+                          'Failed to resend verification email';
       throw new Error(errorMessage);
     }
   }

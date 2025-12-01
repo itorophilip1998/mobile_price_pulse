@@ -34,23 +34,30 @@ export function OTPInput({
     const numericText = text.replace(/[^0-9]/g, '');
     
     if (numericText.length > 1) {
-      // Handle paste
+      // Handle paste - extract only numbers and take first 'length' digits
       const pastedText = numericText.slice(0, length);
-      const newOtp = [...otp];
+      const newOtp = Array(length).fill('');
+      
+      // Fill OTP array with pasted digits
       pastedText.split('').forEach((char, i) => {
-        if (index + i < length) {
-          newOtp[index + i] = char;
+        if (i < length) {
+          newOtp[i] = char;
         }
       });
+      
       setOtp(newOtp);
       
-      // Focus on the next empty input or the last one
-      const nextIndex = Math.min(index + pastedText.length, length - 1);
-      inputRefs.current[nextIndex]?.focus();
+      // Focus on the last filled input or the last input
+      const lastFilledIndex = Math.min(pastedText.length - 1, length - 1);
+      setTimeout(() => {
+        inputRefs.current[lastFilledIndex]?.focus();
+      }, 50);
       
-      // Check if complete
-      if (newOtp.every((digit) => digit !== '')) {
-        onComplete(newOtp.join(''));
+      // Check if complete and auto-submit
+      if (pastedText.length === length && pastedText.split('').every((char) => char !== '')) {
+        setTimeout(() => {
+          onComplete(pastedText);
+        }, 100);
       }
       return;
     }
@@ -90,31 +97,35 @@ export function OTPInput({
     <View style={styles.container}>
       <View style={styles.inputContainer}>
         {otp.map((digit, index) => (
-          <TextInput
-            key={index}
-            ref={(ref) => (inputRefs.current[index] = ref)}
-            style={[
-              styles.input,
-              digit ? styles.inputFilled : null,
-              disabled && styles.inputDisabled,
-            ]}
-            value={digit}
-            onChangeText={(text) => handleChange(text, index)}
-            onKeyPress={(e) => handleKeyPress(e, index)}
-            onFocus={() => handleFocus(index)}
-            keyboardType="number-pad"
-            maxLength={1}
-            selectTextOnFocus
-            editable={!disabled}
-            autoFocus={autoFocus && index === 0}
-          />
+            <TextInput
+              key={index}
+              ref={(ref) => {
+                inputRefs.current[index] = ref;
+              }}
+              style={[
+                styles.input,
+                digit ? styles.inputFilled : null,
+                disabled && styles.inputDisabled,
+              ]}
+              value={digit}
+              onChangeText={(text) => handleChange(text, index)}
+              onKeyPress={(e) => handleKeyPress(e, index)}
+              onFocus={() => handleFocus(index)}
+              keyboardType="number-pad"
+              maxLength={1}
+              selectTextOnFocus
+              editable={!disabled}
+              autoFocus={autoFocus && index === 0}
+              // Enable paste support
+              contextMenuHidden={false}
+            />
         ))}
       </View>
-      {!disabled && (
+      {/* {!disabled && (
         <TouchableOpacity onPress={clearOTP} style={styles.clearButton}>
           <Text style={styles.clearButtonText}>Clear</Text>
         </TouchableOpacity>
-      )}
+      )} */}
     </View>
   );
 }
@@ -129,9 +140,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     marginBottom: 16,
+    paddingHorizontal: 4,
+    gap: 8,
   },
   input: {
-    width: 56,
+    flex: 1,
+    minWidth: 48,
+    maxWidth: 56,
     height: 64,
     borderWidth: 2,
     borderColor: '#E5E7EB',

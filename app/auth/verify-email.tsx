@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   ScrollView,
   StyleSheet,
@@ -14,52 +13,57 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { mobileAuthAPI } from '@/lib/auth/api';
 import { router, useLocalSearchParams } from 'expo-router';
 import { OTPInput } from '@/components/auth/otp-input';
+import { useToast } from '@/components/ui/toast-provider';
+import { useAuth } from '@/hooks/use-auth';
+import { tokenStorage } from '@/lib/auth/storage';
 
-// Verification token expiration time (24 hours in milliseconds)
-const VERIFICATION_EXPIRY_HOURS = 24;
-const VERIFICATION_EXPIRY_MS = VERIFICATION_EXPIRY_HOURS * 60 * 60 * 1000;
+// Verification token expiration time (5 minutes in milliseconds)
+const VERIFICATION_EXPIRY_MINUTES = 5;
+const VERIFICATION_EXPIRY_MS = VERIFICATION_EXPIRY_MINUTES * 60 * 1000;
 
 export default function VerifyEmailScreen() {
   const params = useLocalSearchParams();
+  const { showToast } = useToast();
+  const { signin } = useAuth();
   const [token, setToken] = useState((params.token as string) || '');
+  const [email, setEmail] = useState((params.email as string) || '');
   const [isLoading, setIsLoading] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [isExpired, setIsExpired] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [otpKey, setOtpKey] = useState(0); // Key to force OTP input reset
 
-  // Calculate expiration time
+  // Calculate expiration time - timer that updates every second
   useEffect(() => {
-    // If token is provided via URL, calculate expiration from now
-    // In a real app, you'd get the expiration time from the backend
-    if (params.token) {
-      // For URL tokens, assume they expire in 24 hours from now
-      const expiryTime = Date.now() + VERIFICATION_EXPIRY_MS;
-      const interval = setInterval(() => {
-        const remaining = expiryTime - Date.now();
-        if (remaining <= 0) {
-          setIsExpired(true);
-          setTimeRemaining(0);
-          clearInterval(interval);
-        } else {
-          setTimeRemaining(remaining);
-        }
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
-      // For manual entry, start countdown from 24 hours
-      const expiryTime = Date.now() + VERIFICATION_EXPIRY_MS;
-      const interval = setInterval(() => {
-        const remaining = expiryTime - Date.now();
-        if (remaining <= 0) {
-          setIsExpired(true);
-          setTimeRemaining(0);
-          clearInterval(interval);
-        } else {
-          setTimeRemaining(remaining);
-        }
-      }, 1000);
-      return () => clearInterval(interval);
+    // Start countdown from 5 minutes if not already set
+    if (timeRemaining === null) {
+      setTimeRemaining(VERIFICATION_EXPIRY_MS);
+      return;
     }
-  }, []);
+    
+    // Only run timer if we have time remaining and not expired
+    if (timeRemaining <= 0 || isExpired) {
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev === null || prev <= 0) {
+          setIsExpired(true);
+          return 0;
+        }
+        const remaining = prev - 1000;
+        if (remaining <= 0) {
+          setIsExpired(true);
+          return 0;
+        }
+        return remaining;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [timeRemaining, isExpired]); // Restart timer when timeRemaining changes (e.g., after resend)
 
   const formatTime = (ms: number): string => {
     const hours = Math.floor(ms / (1000 * 60 * 60));
@@ -84,29 +88,52 @@ export default function VerifyEmailScreen() {
   const handleVerify = async (otpValue?: string) => {
     const tokenToVerify = otpValue || token;
     
+    // Validate OTP format
     if (!tokenToVerify || tokenToVerify.length !== 6) {
-      Alert.alert('Error', 'Please enter the complete 6-digit verification code');
+      showToast('Please enter the complete 6-digit verification code', 'error');
+      return;
+    }
+
+    // Validate numeric only
+    if (!/^\d{6}$/.test(tokenToVerify)) {
+      showToast('Verification code must contain only numbers', 'error');
       return;
     }
 
     if (isExpired) {
-      Alert.alert('Expired', 'This verification code has expired. Please request a new one.');
+      showToast('This verification code has expired. Please request a new one.', 'error');
       return;
     }
 
     setIsLoading(true);
     try {
-      await mobileAuthAPI.verifyEmail(tokenToVerify);
-      Alert.alert('Success', 'Email verified successfully!', [
-        { text: 'OK', onPress: () => router.replace('/auth') },
-      ]);
+      const response = await mobileAuthAPI.verifyEmail(tokenToVerify);
+      
+      // Auto-login if tokens are provided
+      if (response.accessToken && response.refreshToken && response.user) {
+        await tokenStorage.setTokens(response.accessToken, response.refreshToken);
+        await tokenStorage.setUser(response.user);
+        showToast('Email verified successfully! Logging you in...', 'success');
+        
+        // Small delay for toast to show, then navigate
+        setTimeout(() => {
+          router.replace('/');
+        }, 500);
+      } else {
+        showToast('Email verified successfully!', 'success');
+        setTimeout(() => {
+          router.replace('/auth');
+        }, 1500);
+      }
     } catch (error: any) {
       const errorMessage = error.message || error.response?.data?.message || 'Failed to verify email';
-      Alert.alert('Error', errorMessage);
+      showToast(errorMessage, 'error');
       
       // Clear OTP on error
-      if (errorMessage.includes('expired')) {
+      if (errorMessage.includes('expired') || errorMessage.includes('Invalid')) {
         setIsExpired(true);
+        setToken('');
+        setOtpKey((prev) => prev + 1);
       }
     } finally {
       setIsLoading(false);
@@ -114,7 +141,63 @@ export default function VerifyEmailScreen() {
   };
 
   const handleResend = async () => {
-    Alert.alert('Resend Code', 'Please sign up again to receive a new verification code.');
+    // Validate email
+    if (!email) {
+      showToast('Email address is required to resend verification code. Please sign up again.', 'error');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      showToast('Invalid email address format', 'error');
+      return;
+    }
+
+    if (resendCooldown > 0) {
+      showToast(`Please wait ${resendCooldown} seconds before requesting a new code.`, 'warning');
+      return;
+    }
+
+    setIsResending(true);
+    try {
+      const response = await mobileAuthAPI.resendVerificationEmail(email);
+      
+      // Clear the OTP input so user can enter the new code
+      setToken('');
+      setOtpKey((prev) => prev + 1); // Force OTP component to reset
+      
+      // Reset timer to exactly 5 minutes
+      if (response.verificationExpiresAt) {
+        const expiryTime = new Date(response.verificationExpiresAt).getTime();
+        const remaining = expiryTime - Date.now();
+        // Always set to full 5 minutes to ensure accurate countdown
+        setTimeRemaining(VERIFICATION_EXPIRY_MS);
+      } else {
+        // Start new 5-minute countdown
+        setTimeRemaining(VERIFICATION_EXPIRY_MS);
+      }
+      setIsExpired(false);
+
+      // Set cooldown (30 seconds)
+      setResendCooldown(30);
+      const cooldownInterval = setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(cooldownInterval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      showToast('A new verification code has been sent to your email', 'success');
+    } catch (error: any) {
+      const errorMessage = error.message || 'Failed to resend verification code. Please try again.';
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsResending(false);
+    }
   };
 
   return (
@@ -147,6 +230,7 @@ export default function VerifyEmailScreen() {
 
           {/* OTP Input Boxes */}
           <OTPInput
+            key={otpKey}
             length={6}
             onComplete={handleOTPComplete}
             autoFocus={true}
@@ -190,12 +274,21 @@ export default function VerifyEmailScreen() {
 
           <View style={styles.helpContainer}>
             <Text style={styles.helpText}>Didn't receive the code?</Text>
-            <TouchableOpacity onPress={handleResend} disabled={isLoading}>
-              <Text style={[styles.resendLink, isLoading && styles.resendLinkDisabled]}>
-                Resend Code
+            <TouchableOpacity 
+              onPress={handleResend} 
+              disabled={isLoading || isResending || resendCooldown > 0}
+            >
+              <Text style={[
+                styles.resendLink, 
+                (isLoading || isResending || resendCooldown > 0) && styles.resendLinkDisabled
+              ]}>
+                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
               </Text>
             </TouchableOpacity>
           </View>
+          {email && (
+            <Text style={styles.emailHint}>Code will be sent to: {email}</Text>
+          )}
 
           <TouchableOpacity
             onPress={() => router.replace('/auth')}
@@ -216,9 +309,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingTop: 40,
     paddingBottom: 40,
+    width: '100%',
   },
   header: {
     marginBottom: 32,
@@ -236,55 +330,63 @@ const styles = StyleSheet.create({
   formContainer: {
     flex: 1,
     width: '100%',
+    paddingHorizontal: 4,
   },
   iconContainer: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 12,
   },
   iconText: {
     fontSize: 80,
   },
   title: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 20,
+    marginBottom: 16,
     textAlign: 'center',
     letterSpacing: -0.5,
+    paddingHorizontal: 8,
   },
   subtitle: {
-    fontSize: 17,
+    fontSize: 16,
     color: '#6B7280',
-    marginBottom: 56,
+    marginBottom: 40,
     textAlign: 'center',
-    lineHeight: 26,
+    lineHeight: 24,
+    paddingHorizontal: 8,
   },
   timerContainer: {
     alignItems: 'center',
     marginTop: 24,
     marginBottom: 32,
     paddingVertical: 16,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     backgroundColor: '#F9FAFB',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    width: '100%',
+    maxWidth: '100%',
   },
   timerLabel: {
     fontSize: 14,
     color: '#6B7280',
     marginBottom: 4,
+    textAlign: 'center',
   },
   timerText: {
     fontSize: 20,
     fontWeight: '700',
     color: '#667eea',
     letterSpacing: 0.5,
+    textAlign: 'center',
   },
   expiredText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#EF4444',
+    textAlign: 'center',
   },
   primaryButton: {
     borderRadius: 20,
@@ -329,10 +431,20 @@ const styles = StyleSheet.create({
   secondaryButton: {
     paddingVertical: 16,
     alignItems: 'center',
+    paddingHorizontal: 8,
   },
   secondaryButtonText: {
     fontSize: 16,
     color: '#6B7280',
     fontWeight: '600',
+  },
+  emailHint: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+    fontStyle: 'italic',
+    paddingHorizontal: 8,
   },
 });
