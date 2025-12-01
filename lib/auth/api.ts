@@ -46,7 +46,11 @@ class MobileAuthAPI {
             if (!refreshToken) {
               // Don't throw error, just reject the original request
               // This allows the app to handle the 401 properly (e.g., redirect to login)
-              console.warn('No refresh token available for token refresh');
+              // Only log once to avoid spam
+              if (!originalRequest._loggedNoToken) {
+                console.warn('No refresh token available for token refresh');
+                originalRequest._loggedNoToken = true;
+              }
               await tokenStorage.clearTokens();
               return Promise.reject(error);
             }

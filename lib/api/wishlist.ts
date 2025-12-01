@@ -2,6 +2,7 @@ import axios from 'axios';
 import { API_CONFIG } from '../config';
 import { tokenStorage } from '../auth/storage';
 import { Product } from './products';
+import { setupRefreshTokenInterceptor } from './interceptors';
 
 const client = axios.create({
   baseURL: `${API_CONFIG.BASE_URL}/wishlist`,
@@ -16,6 +17,9 @@ client.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+// Setup refresh token interceptor
+setupRefreshTokenInterceptor(client);
 
 export interface WishlistItem {
   id: string;

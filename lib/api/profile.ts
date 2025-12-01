@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
 import { tokenStorage } from '../auth/storage';
+import { setupRefreshTokenInterceptor } from './interceptors';
 
 const client = axios.create({
   baseURL: `${API_CONFIG.BASE_URL}/auth`,
@@ -15,6 +16,9 @@ client.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+// Setup refresh token interceptor
+setupRefreshTokenInterceptor(client);
 
 export interface Profile {
   id: string;
