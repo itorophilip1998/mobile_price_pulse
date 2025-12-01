@@ -52,12 +52,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const signin = useCallback(async (email: string, password: string) => {
     try {
       const response = await mobileAuthAPI.signin(email, password);
+      
+      // Validate response structure
+      if (!response.accessToken) {
+        throw new Error('Sign in response missing access token');
+      }
+      if (!response.refreshToken) {
+        throw new Error('Sign in response missing refresh token');
+      }
+      if (!response.user) {
+        throw new Error('Sign in response missing user data');
+      }
+      
+      // Store tokens and user
       await tokenStorage.setTokens(response.accessToken, response.refreshToken);
       await tokenStorage.setUser(response.user);
       setUser(response.user);
       router.replace('/');
     } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to sign in');
+      // Extract error message from various possible error formats
+      const errorMessage = error?.response?.data?.message || 
+                          error?.response?.data?.error || 
+                          error?.message || 
+                          'Failed to sign in';
+      throw new Error(errorMessage);
     }
   }, []);
 
@@ -76,6 +94,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const currentUser = await mobileAuthAPI.getCurrentUser();
+      setUser(currentUser);
+      await tokenStorage.setUser(currentUser);
+      return currentUser;
+    } catch (error) {
+      console.error('Error refreshing user:', error);
+      throw error;
+    }
+  }, []);
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -83,6 +113,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     signup,
     signin,
     signout,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

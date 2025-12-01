@@ -9,6 +9,12 @@ export interface User {
     phone?: string;
     avatar?: string;
     bio?: string;
+    address1?: string;
+    address2?: string;
+    state?: string;
+    localGovernment?: string;
+    country?: string;
+    deliveryLocation?: string;
   };
 }
 
@@ -24,5 +30,6 @@ export interface AuthContextType {
   }) => Promise<void>;
   signin: (email: string, password: string) => Promise<void>;
   signout: () => Promise<void>;
+  refreshUser?: () => Promise<User>;
 }
 

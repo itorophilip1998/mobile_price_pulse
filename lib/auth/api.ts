@@ -44,7 +44,11 @@ class MobileAuthAPI {
           try {
             const refreshToken = await tokenStorage.getRefreshToken();
             if (!refreshToken) {
-              throw new Error('No refresh token');
+              // Don't throw error, just reject the original request
+              // This allows the app to handle the 401 properly (e.g., redirect to login)
+              console.warn('No refresh token available for token refresh');
+              await tokenStorage.clearTokens();
+              return Promise.reject(error);
             }
 
             const response = await axios.post(`${API_CONFIG.BASE_URL}${API_CONFIG.AUTH_ENDPOINT}/refresh-token`, {
@@ -183,6 +187,13 @@ class MobileAuthAPI {
         email: email.trim(), 
         password 
       });
+      
+      // Validate response structure
+      if (!response.data.accessToken || !response.data.refreshToken) {
+        console.error('Signin response missing tokens:', response.data);
+        throw new Error('Invalid signin response: missing tokens');
+      }
+      
       return response.data;
     } catch (error: any) {
       // Update health status on error
