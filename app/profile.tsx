@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: '#9CA3AF',
   },
   avatarContainer: {
     alignItems: 'center',
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
@@ -545,7 +545,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     gap: 12,
   },
   securityText: {
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F9FAFB',
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
   },
   secondaryButtonText: {
     fontSize: 16,

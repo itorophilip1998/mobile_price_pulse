@@ -731,7 +731,7 @@ const styles = StyleSheet.create({
   },
   priceInputField: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,

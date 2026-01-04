@@ -38,19 +38,21 @@ class MobileAuthAPI {
       async (error) => {
         const originalRequest = error.config;
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        // Don't try to refresh token for auth endpoints (signin, signup, etc.)
+        const isAuthEndpoint = originalRequest.url?.includes('/signin') || 
+                              originalRequest.url?.includes('/signup') ||
+                              originalRequest.url?.includes('/forgot-password') ||
+                              originalRequest.url?.includes('/reset-password') ||
+                              originalRequest.url?.includes('/verify-email') ||
+                              originalRequest.url?.includes('/resend-verification');
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
           originalRequest._retry = true;
 
           try {
             const refreshToken = await tokenStorage.getRefreshToken();
             if (!refreshToken) {
-              // Don't throw error, just reject the original request
-              // This allows the app to handle the 401 properly (e.g., redirect to login)
-              // Only log once to avoid spam
-              if (!originalRequest._loggedNoToken) {
-                console.warn('No refresh token available for token refresh');
-                originalRequest._loggedNoToken = true;
-              }
+              // Silently handle - this is expected when user is not logged in
               await tokenStorage.clearTokens();
               return Promise.reject(error);
             }
@@ -205,10 +207,43 @@ class MobileAuthAPI {
         this.isApiHealthy = false;
       }
 
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error || 
-                          error.message ||
-                          'Invalid email or password';
+      // Extract detailed error message
+      let errorMessage = 'Invalid email or password';
+      
+      if (error.response) {
+        // Server responded with an error
+        const status = error.response.status;
+        const data = error.response.data;
+        
+        if (status === 401) {
+          errorMessage = data?.message || data?.error || 'Invalid email or password. Please check your credentials and try again.';
+        } else if (status === 400) {
+          errorMessage = data?.message || data?.error || 'Invalid request. Please check your input and try again.';
+        } else if (status === 404) {
+          errorMessage = 'Account not found. Please check your email address.';
+        } else if (status === 403) {
+          errorMessage = data?.message || data?.error || 'Account is not verified. Please verify your email first.';
+        } else if (status === 429) {
+          errorMessage = 'Too many login attempts. Please wait a few minutes and try again.';
+        } else if (status >= 500) {
+          errorMessage = 'Server error. Please try again later.';
+        } else {
+          errorMessage = data?.message || data?.error || `Login failed (${status}). Please try again.`;
+        }
+      } else if (error.request) {
+        // Request was made but no response received
+        if (error.code === 'ECONNABORTED') {
+          errorMessage = 'Request timed out. Please check your internet connection and try again.';
+        } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+          errorMessage = 'Cannot connect to server. Please check your internet connection.';
+        } else {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        }
+      } else if (error.message) {
+        // Error was thrown manually
+        errorMessage = error.message;
+      }
+      
       throw new Error(errorMessage);
     }
   }

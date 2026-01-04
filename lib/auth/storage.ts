@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_KEY = 'user';
+const REMEMBER_ME_KEY = 'remember_me_account';
 
 export const tokenStorage = {
   getAccessToken: async (): Promise<string | null> => {
@@ -72,6 +73,33 @@ export const tokenStorage = {
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
     } catch (error) {
       console.error('Error setting user:', error);
+    }
+  },
+
+  // Remember me functionality - save account info (except email)
+  setRememberedAccount: async (accountInfo: { firstName?: string; lastName?: string; phone?: string }): Promise<void> => {
+    try {
+      await AsyncStorage.setItem(REMEMBER_ME_KEY, JSON.stringify(accountInfo));
+    } catch (error) {
+      console.error('Error setting remembered account:', error);
+    }
+  },
+
+  getRememberedAccount: async (): Promise<{ firstName?: string; lastName?: string; phone?: string } | null> => {
+    try {
+      const accountStr = await AsyncStorage.getItem(REMEMBER_ME_KEY);
+      return accountStr ? JSON.parse(accountStr) : null;
+    } catch (error) {
+      console.error('Error getting remembered account:', error);
+      return null;
+    }
+  },
+
+  clearRememberedAccount: async (): Promise<void> => {
+    try {
+      await AsyncStorage.removeItem(REMEMBER_ME_KEY);
+    } catch (error) {
+      console.error('Error clearing remembered account:', error);
     }
   },
 };

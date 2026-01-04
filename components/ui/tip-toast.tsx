@@ -4,21 +4,20 @@ import {
   Text,
   StyleSheet,
   Animated,
-  Dimensions,
   Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 
-export type ToastType = 'success' | 'error' | 'info' | 'warning';
+export type TipToastType = 'success' | 'error' | 'info';
 
-interface ToastProps {
+interface TipToastProps {
   message: string;
-  type?: ToastType;
+  type?: TipToastType;
   duration?: number;
   onHide?: () => void;
 }
 
-export function Toast({ message, type = 'info', duration = 2000, onHide }: ToastProps) {
+export function TipToast({ message, type = 'success', duration = 2000, onHide }: TipToastProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
@@ -59,31 +58,27 @@ export function Toast({ message, type = 'info', duration = 2000, onHide }: Toast
     return () => clearTimeout(timer);
   }, [duration, onHide]);
 
-  const getColors = () => {
+  const getColor = () => {
     switch (type) {
       case 'success':
-        return ['#10B981', '#059669'];
+        return '#10B981';
       case 'error':
-        return ['#EF4444', '#DC2626'];
-      case 'warning':
-        return ['#F59E0B', '#D97706'];
+        return '#EF4444';
       case 'info':
       default:
-        return ['#667eea', '#764ba2'];
+        return '#667eea';
     }
   };
 
   const getIcon = () => {
     switch (type) {
       case 'success':
-        return '✓';
+        return 'checkmark-circle';
       case 'error':
-        return '✕';
-      case 'warning':
-        return '⚠';
+        return 'close-circle';
       case 'info':
       default:
-        return 'ℹ';
+        return 'information-circle';
     }
   };
 
@@ -97,19 +92,12 @@ export function Toast({ message, type = 'info', duration = 2000, onHide }: Toast
         },
       ]}
     >
-      <LinearGradient
-        colors={getColors()}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.gradient}
-      >
-        <View style={styles.content}>
-          <Text style={styles.icon}>{getIcon()}</Text>
-          <Text style={styles.message} numberOfLines={3}>
-            {message}
-          </Text>
-        </View>
-      </LinearGradient>
+      <View style={[styles.content, { backgroundColor: getColor() }]}>
+        <Ionicons name={getIcon() as any} size={16} color="#FFFFFF" />
+        <Text style={styles.message} numberOfLines={1}>
+          {message}
+        </Text>
+      </View>
     </Animated.View>
   );
 }
@@ -121,34 +109,24 @@ const styles = StyleSheet.create({
     right: 16,
     zIndex: 9999,
     elevation: 10,
-    maxWidth: Dimensions.get('window').width * 0.85,
   },
-  gradient: {
-    borderRadius: 20,
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
+    borderRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 6,
   },
-  icon: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
   message: {
-    flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#FFFFFF',
-    lineHeight: 18,
   },
 });
 

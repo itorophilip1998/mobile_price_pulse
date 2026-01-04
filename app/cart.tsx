@@ -107,7 +107,11 @@ function CartContent() {
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {cart.items.map((item) => (
           <View key={item.id} style={styles.cartItem}>
-            <View style={styles.itemImageContainer}>
+            <TouchableOpacity
+              style={styles.itemImageContainer}
+              onPress={() => router.push(`/product/${item.product.slug}`)}
+              activeOpacity={0.7}
+            >
               {item.product.image ? (
                 <ExpoImage
                   source={{ uri: item.product.image }}
@@ -122,12 +126,17 @@ function CartContent() {
                   <Ionicons name="image-outline" size={32} color="#9CA3AF" />
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
 
             <View style={styles.itemInfo}>
-              <Text style={styles.itemName} numberOfLines={2}>
-                {item.product.name}
-              </Text>
+              <TouchableOpacity
+                onPress={() => router.push(`/product/${item.product.slug}`)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.itemName} numberOfLines={2}>
+                  {item.product.name}
+                </Text>
+              </TouchableOpacity>
               <Text style={styles.itemVendor}>{item.product.vendor}</Text>
               <View style={styles.itemPriceContainer}>
                 <Text style={styles.itemPrice}>₦{item.product.price.toLocaleString()}</Text>

@@ -21,10 +21,16 @@ function SettingsContent() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Settings</Text>
-          <Text style={styles.description}>
-            Settings page coming soon...
-          </Text>
+          <Text style={styles.sectionTitle}>Legal</Text>
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/terms-and-conditions')}
+          >
+            <View style={styles.settingsItemContent}>
+              <Text style={styles.settingsItemText}>Terms and Conditions</Text>
+              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            </View>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -74,7 +80,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: '#9CA3AF',
   },
   sectionTitle: {
     fontSize: 18,
@@ -87,6 +93,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#6B7280',
     lineHeight: 22,
+  },
+  settingsItem: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  settingsItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  settingsItemText: {
+    fontSize: 15,
+    color: '#374151',
+    fontWeight: '500',
   },
 });
 

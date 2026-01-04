@@ -49,10 +49,12 @@ export default function RootLayout() {
                 <Stack.Screen name="marketplace" />
                 <Stack.Screen name="cart" />
                 <Stack.Screen name="wishlist" />
+                <Stack.Screen name="categories" />
                 <Stack.Screen name="become-vendor" />
+                <Stack.Screen name="product/[slug]" />
                 <Stack.Screen name="profile" />
-                <Stack.Screen name="settings" />
-                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+                <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
               </Stack>
               <StatusBar style="auto" />
             </ThemeProvider>

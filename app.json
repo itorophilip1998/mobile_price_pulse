@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "PricePulse AI",
+    "name": "Rosie",
     "slug": "pricepulse-ai",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -41,6 +41,13 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you add product images.",
+          "cameraPermission": "The app accesses your camera to let you take product photos."
         }
       ]
     ],

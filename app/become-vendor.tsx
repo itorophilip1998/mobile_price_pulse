@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,7 +18,6 @@ import { router } from 'expo-router';
 import { useToast } from '@/components/ui/toast-provider';
 import { Ionicons } from '@expo/vector-icons';
 import { useCategories } from '@/hooks/use-products';
-import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
 import { vendorAPI } from '@/lib/api/vendor';
 import { useQueryClient } from '@tanstack/react-query';
@@ -41,21 +41,41 @@ function BecomeVendorContent() {
 
   // Pick image
   const pickImage = useCallback(async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera roll permissions to add product images');
-      return;
-    }
+    try {
+      // Dynamically import ImagePicker to avoid native module errors
+      const ImagePicker = await import('expo-image-picker');
+      
+      // Check if ImagePicker is available
+      if (!ImagePicker || !ImagePicker.requestMediaLibraryPermissionsAsync) {
+        Alert.alert(
+          'Image Picker Unavailable',
+          'Image picker is not available. Please rebuild the app with native modules or use a development build.',
+        );
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant camera roll permissions to add product images');
+        return;
+      }
 
-    if (!result.canceled && result.assets[0]) {
-      setProductImage(result.assets[0].uri);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setProductImage(result.assets[0].uri);
+      }
+    } catch (error: any) {
+      console.error('Image picker error:', error);
+      Alert.alert(
+        'Error',
+        error?.message || 'Failed to open image picker. Please rebuild the app with native modules.',
+      );
     }
   }, []);
 
@@ -374,7 +394,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: '#9CA3AF',
   },
   sectionTitle: {
     fontSize: 18,
@@ -394,7 +414,7 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
@@ -422,7 +442,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
   },
   categoryOptionActive: {
     backgroundColor: '#667eea',
@@ -442,7 +462,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     backgroundColor: '#F9FAFB',
   },
   imagePreview: {

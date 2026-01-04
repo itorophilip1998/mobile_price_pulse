@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
   searchInput: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     borderRadius: 16,
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     overflow: 'hidden',
     marginBottom: 16,
   },

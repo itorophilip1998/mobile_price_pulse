@@ -7,6 +7,7 @@ let failedQueue: Array<{
   resolve: (value?: any) => void;
   reject: (error?: any) => void;
 }> = [];
+let hasWarnedNoToken = false;
 
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach((prom) => {
@@ -25,7 +26,15 @@ export const setupRefreshTokenInterceptor = (client: any) => {
     async (error: AxiosError) => {
       const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-      if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      // Don't try to refresh token for auth endpoints (signin, signup, etc.)
+      const isAuthEndpoint = originalRequest.url?.includes('/signin') || 
+                            originalRequest.url?.includes('/signup') ||
+                            originalRequest.url?.includes('/forgot-password') ||
+                            originalRequest.url?.includes('/reset-password') ||
+                            originalRequest.url?.includes('/verify-email') ||
+                            originalRequest.url?.includes('/resend-verification');
+
+      if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthEndpoint) {
         if (isRefreshing) {
           // If already refreshing, queue this request
           return new Promise((resolve, reject) => {
@@ -48,14 +57,17 @@ export const setupRefreshTokenInterceptor = (client: any) => {
         try {
           const refreshToken = await tokenStorage.getRefreshToken();
           if (!refreshToken) {
-            // Only log once, not for every request
-            if (failedQueue.length === 0) {
-              console.warn('No refresh token available for token refresh');
+            // Only log once per session, not for every request
+            if (!hasWarnedNoToken && failedQueue.length === 0) {
+              hasWarnedNoToken = true;
+              // Silently handle - this is expected when user is not logged in
             }
             await tokenStorage.clearTokens();
             processQueue(new Error('No refresh token available'));
             return Promise.reject(error);
           }
+          // Reset warning flag if we successfully got a refresh token
+          hasWarnedNoToken = false;
 
           const response = await axios.post(
             `${API_CONFIG.BASE_URL}${API_CONFIG.AUTH_ENDPOINT}/refresh-token`,

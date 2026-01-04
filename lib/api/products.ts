@@ -47,6 +47,7 @@ export interface Category {
   slug: string;
   description?: string;
   image?: string;
+  isPinned?: boolean;
 }
 
 export interface ProductsResponse {

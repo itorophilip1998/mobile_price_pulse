@@ -88,6 +88,11 @@ function WishlistContent() {
     [addToCart, showToast],
   );
 
+  // Navigate to product detail
+  const handleProductPress = useCallback((product: Product) => {
+    router.push(`/product/${product.slug}`);
+  }, []);
+
   // Render product card
   const renderProduct = useCallback(
     ({ item }: { item: WishlistItem }) => {
@@ -97,7 +102,11 @@ function WishlistContent() {
 
       return (
         <View style={styles.productCard}>
-          <TouchableOpacity style={styles.productImageContainer}>
+          <TouchableOpacity
+            style={styles.productImageContainer}
+            onPress={() => handleProductPress(product)}
+            activeOpacity={0.9}
+          >
             <Image
               source={{ uri: imageUrl }}
               style={styles.productImage}
@@ -119,16 +128,18 @@ function WishlistContent() {
             </TouchableOpacity>
           </TouchableOpacity>
           <View style={styles.productInfo}>
-            <Text style={styles.productName} numberOfLines={2}>
-              {product.name}
-            </Text>
+            <TouchableOpacity onPress={() => handleProductPress(product)} activeOpacity={0.7}>
+              <Text style={styles.productName} numberOfLines={2}>
+                {product.name}
+              </Text>
+            </TouchableOpacity>
             <Text style={styles.productVendor}>{product.vendor}</Text>
             
             {/* Ratings */}
             <View style={styles.ratingContainer}>
               <Ionicons name="star" size={14} color="#FBBF24" />
-              <Text style={styles.ratingText}>{product.rating.toFixed(1)}</Text>
-              <Text style={styles.reviewsText}>({product.reviews})</Text>
+              <Text style={styles.ratingText}>{(product.rating || 0).toFixed(1)}</Text>
+              <Text style={styles.reviewsText}>({String(product.reviews || 0)})</Text>
             </View>
             
             {/* Price */}
@@ -160,7 +171,7 @@ function WishlistContent() {
         </View>
       );
     },
-    [handleAddToCart, removeFromWishlist],
+    [handleAddToCart, removeFromWishlist, handleProductPress],
   );
 
   return (
@@ -286,7 +297,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     margin: 8,
     overflow: 'hidden',
   },

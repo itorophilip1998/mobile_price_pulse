@@ -70,11 +70,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(response.user);
       router.replace('/');
     } catch (error: any) {
-      // Extract error message from various possible error formats
-      const errorMessage = error?.response?.data?.message || 
+      // Extract error message - the API layer should already have formatted it
+      const errorMessage = error?.message || 
+                          error?.response?.data?.message || 
                           error?.response?.data?.error || 
-                          error?.message || 
-                          'Failed to sign in';
+                          'Failed to sign in. Please try again.';
       throw new Error(errorMessage);
     }
   }, []);

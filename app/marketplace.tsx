@@ -15,10 +15,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ProtectedScreen } from '@/components/auth/protected-screen';
 import { useAuth } from '@/hooks/use-auth';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Product } from '@/lib/api/products';
 import { useCart } from '@/contexts/cart-context';
 import { useToast } from '@/components/ui/toast-provider';
+import { TipToast } from '@/components/ui/tip-toast';
 import { Ionicons } from '@expo/vector-icons';
 import { useProducts, useCategories } from '@/hooks/use-products';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -28,12 +29,13 @@ const { width } = Dimensions.get('window');
 
 function MarketplaceContent() {
   const { user, signout } = useAuth();
-  const { cart, addToCart } = useCart();
+  const { cart, addToCart, removeItem } = useCart();
   const { showToast } = useToast();
+  const params = useLocalSearchParams<{ category?: string }>();
   
   // State
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>(params.category || '');
   const [showFilters, setShowFilters] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [sortBy, setSortBy] = useState<string>('createdAt');
@@ -43,6 +45,7 @@ function MarketplaceContent() {
   const [wishlist, setWishlist] = useState<Set<string>>(new Set());
   const [wishlistCount, setWishlistCount] = useState(0);
   const [loadingWishlist, setLoadingWishlist] = useState(true);
+  const [tipToast, setTipToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Load wishlist from API on mount
   useEffect(() => {
@@ -65,11 +68,25 @@ function MarketplaceContent() {
     loadWishlist();
   }, [user]);
 
+  // Update selected category when route params change
+  useEffect(() => {
+    if (params.category !== undefined) {
+      setSelectedCategory(params.category);
+    }
+  }, [params.category]);
+
   // Debounce search query for better performance
   const debouncedSearch = useDebounce(searchQuery, 500);
 
   // Fetch categories with React Query
   const { data: categories = [], isLoading: categoriesLoading } = useCategories();
+  
+  // Separate pinned and unpinned categories
+  const sortedCategories = useMemo(() => {
+    const pinned = categories.filter((cat) => cat.isPinned);
+    const unpinned = categories.filter((cat) => !cat.isPinned);
+    return [...pinned, ...unpinned];
+  }, [categories]);
 
   // Fetch products with React Query infinite scroll
   const {
@@ -119,17 +136,37 @@ function MarketplaceContent() {
     setShowFilters(false);
   }, []);
 
-  // Add to cart
+  // Check if product is in cart
+  const isInCart = useCallback(
+    (productId: string) => {
+      return cart?.items.some((item) => item.product.id === productId) || false;
+    },
+    [cart],
+  );
+
+  // Add to cart or remove from cart
   const handleAddToCart = useCallback(
     async (product: Product) => {
+      const inCart = isInCart(product.id);
+      
       try {
-        await addToCart(product.id, 1);
-        showToast(`${product.name} added to cart`, 'success');
+        if (inCart) {
+          // Remove from cart
+          const cartItem = cart?.items.find((item) => item.product.id === product.id);
+          if (cartItem) {
+            await removeItem(cartItem.id);
+            setTipToast({ message: 'Removed from cart', type: 'success' });
+          }
+        } else {
+          // Add to cart
+          await addToCart(product.id, 1);
+          setTipToast({ message: 'Added to cart', type: 'success' });
+        }
       } catch (error) {
-        showToast('Failed to add to cart', 'error');
+        setTipToast({ message: 'Failed to update cart', type: 'error' });
       }
     },
-    [addToCart, showToast],
+    [addToCart, removeItem, cart, isInCart],
   );
 
   // Toggle wishlist
@@ -169,6 +206,11 @@ function MarketplaceContent() {
     [user, wishlist, showToast],
   );
 
+  // Navigate to product detail
+  const handleProductPress = useCallback((product: Product) => {
+    router.push(`/product/${product.slug}`);
+  }, []);
+
   // Render product card
   const renderProduct = useCallback(
     ({ item }: { item: Product }) => {
@@ -178,7 +220,11 @@ function MarketplaceContent() {
 
       return (
         <View style={styles.productCard}>
-          <TouchableOpacity style={styles.productImageContainer}>
+          <TouchableOpacity
+            style={styles.productImageContainer}
+            onPress={() => handleProductPress(item)}
+            activeOpacity={0.9}
+          >
             <Image
               source={{ uri: imageUrl }}
               style={styles.productImage}
@@ -204,16 +250,18 @@ function MarketplaceContent() {
             </TouchableOpacity>
           </TouchableOpacity>
           <View style={styles.productInfo}>
-            <Text style={styles.productName} numberOfLines={2}>
-              {item.name}
-            </Text>
+            <TouchableOpacity onPress={() => handleProductPress(item)} activeOpacity={0.7}>
+              <Text style={styles.productName} numberOfLines={2}>
+                {item.name}
+              </Text>
+            </TouchableOpacity>
             <Text style={styles.productVendor}>{item.vendor}</Text>
             
             {/* Ratings */}
             <View style={styles.ratingContainer}>
               <Ionicons name="star" size={14} color="#FBBF24" />
               <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
-              <Text style={styles.reviewsText}>({item.reviews})</Text>
+              <Text style={styles.reviewsText}>({String(item.reviews || 0)})</Text>
             </View>
             
             {/* Price */}
@@ -226,26 +274,54 @@ function MarketplaceContent() {
               )}
             </View>
             
-            {/* Add to Cart Button */}
-            <TouchableOpacity
-              style={styles.addToCartButton}
-              onPress={() => handleAddToCart(item)}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#667eea', '#764ba2']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-              <Ionicons name="cart" size={18} color="#FFFFFF" style={styles.cartIcon} />
-              <Text style={styles.addToCartText}>Add to Cart</Text>
-            </TouchableOpacity>
+            {/* Add to Cart / Remove Button */}
+            {(() => {
+              const inCart = isInCart(item.id);
+              return (
+                <View style={inCart ? styles.addToCartButtonWrapper : undefined}>
+                  {inCart && (
+                    <LinearGradient
+                      colors={['#667eea', '#764ba2']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={StyleSheet.absoluteFillObject}
+                    />
+                  )}
+                  <TouchableOpacity
+                    style={[
+                      styles.addToCartButton,
+                      inCart && styles.addToCartButtonInCart,
+                    ]}
+                    onPress={() => handleAddToCart(item)}
+                    activeOpacity={0.8}
+                    disabled={false}
+                  >
+                    {!inCart ? (
+                      <>
+                        <LinearGradient
+                          colors={['#667eea', '#764ba2']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={StyleSheet.absoluteFillObject}
+                        />
+                        <Ionicons name="cart" size={18} color="#FFFFFF" style={styles.cartIcon} />
+                        <Text style={styles.addToCartText}>Add to Cart</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-circle" size={18} color="#667eea" style={styles.cartIcon} />
+                        <Text style={styles.removeFromCartText}>In Cart</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
           </View>
         </View>
       );
     },
-    [handleAddToCart, toggleWishlist, wishlist],
+    [handleAddToCart, toggleWishlist, wishlist, handleProductPress, isInCart],
   );
 
   const loading = productsLoading && products.length === 0;
@@ -288,97 +364,6 @@ function MarketplaceContent() {
             </TouchableOpacity>
           </View>
         </View>
-        
-        {/* Menu Dropdown */}
-        {showMenu && (
-          <View style={styles.menuDropdown}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                showToast('Orders feature coming soon', 'info');
-              }}
-            >
-              <Ionicons name="receipt-outline" size={20} color="#374151" />
-              <Text style={styles.menuItemText}>Orders</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                showToast('Track items feature coming soon', 'info');
-              }}
-            >
-              <Ionicons name="location-outline" size={20} color="#374151" />
-              <Text style={styles.menuItemText}>Track Items</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                router.push('/wishlist');
-              }}
-            >
-              <Ionicons name="heart-outline" size={20} color="#374151" />
-              <Text style={styles.menuItemText}>Wishlist</Text>
-              {wishlistCount > 0 && (
-                <View style={styles.wishlistBadge}>
-                  <Text style={styles.wishlistBadgeText}>{wishlistCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                setSelectedCategory('');
-              }}
-            >
-              <Ionicons name="grid-outline" size={20} color="#374151" />
-              <Text style={styles.menuItemText}>Categories</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                router.push('/become-vendor');
-              }}
-            >
-              <Ionicons name="storefront-outline" size={20} color="#374151" />
-              <Text style={styles.menuItemText}>Become a Vendor</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                router.push('/profile');
-              }}
-            >
-              <Ionicons name="person-outline" size={20} color="#374151" />
-              <Text style={styles.menuItemText}>Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                router.push('/settings');
-              }}
-            >
-              <Ionicons name="settings-outline" size={20} color="#374151" />
-              <Text style={styles.menuItemText}>Settings</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.menuItem, styles.menuItemLast]}
-              onPress={async () => {
-                setShowMenu(false);
-                await signout();
-              }}
-            >
-              <Ionicons name="log-out-outline" size={20} color="#EF4444" />
-              <Text style={[styles.menuItemText, styles.menuItemTextDanger]}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
@@ -406,16 +391,20 @@ function MarketplaceContent() {
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
-          data={[{ id: 'all', name: 'All', slug: '' }, ...categories]}
+          data={[{ id: 'all', name: 'All', slug: '', isPinned: false }, ...sortedCategories]}
           keyExtractor={(item) => item.id || item.slug || `cat-${item.name}`}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[
                 styles.categoryChip,
                 selectedCategory === item.slug && styles.categoryChipActive,
+                item.isPinned && styles.categoryChipPinned,
               ]}
               onPress={() => setSelectedCategory(item.slug || '')}
             >
+              {item.isPinned && (
+                <Ionicons name="pin" size={12} color="#667eea" style={styles.pinIcon} />
+              )}
               <Text
                 style={[
                   styles.categoryText,
@@ -437,6 +426,97 @@ function MarketplaceContent() {
           }
         />
       </View>
+
+      {/* Menu Dropdown - Overlay */}
+      {showMenu && (
+        <View style={styles.menuDropdown}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setShowMenu(false);
+              showToast('Orders feature coming soon', 'info');
+            }}
+          >
+            <Ionicons name="receipt-outline" size={20} color="#374151" />
+            <Text style={styles.menuItemText}>Orders</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setShowMenu(false);
+              showToast('Track items feature coming soon', 'info');
+            }}
+          >
+            <Ionicons name="location-outline" size={20} color="#374151" />
+            <Text style={styles.menuItemText}>Track Items</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setShowMenu(false);
+              router.push('/wishlist');
+            }}
+          >
+            <Ionicons name="heart-outline" size={20} color="#374151" />
+            <Text style={styles.menuItemText}>Wishlist</Text>
+            {wishlistCount > 0 && (
+              <View style={styles.wishlistBadge}>
+                <Text style={styles.wishlistBadgeText}>{wishlistCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setShowMenu(false);
+              router.push('/categories');
+            }}
+          >
+            <Ionicons name="grid-outline" size={20} color="#374151" />
+            <Text style={styles.menuItemText}>Categories</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setShowMenu(false);
+              router.push('/become-vendor');
+            }}
+          >
+            <Ionicons name="storefront-outline" size={20} color="#374151" />
+            <Text style={styles.menuItemText}>Become a Vendor</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setShowMenu(false);
+              router.push('/profile');
+            }}
+          >
+            <Ionicons name="person-outline" size={20} color="#374151" />
+            <Text style={styles.menuItemText}>Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setShowMenu(false);
+              router.push('/settings');
+            }}
+          >
+            <Ionicons name="settings-outline" size={20} color="#374151" />
+            <Text style={styles.menuItemText}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.menuItem, styles.menuItemLast]}
+            onPress={async () => {
+              setShowMenu(false);
+              await signout();
+            }}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+            <Text style={[styles.menuItemText, styles.menuItemTextDanger]}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Filter Bar */}
       <View style={styles.filterBar}>
@@ -603,6 +683,16 @@ function MarketplaceContent() {
           </View>
         </View>
       </Modal>
+
+      {/* Tip Toast */}
+      {tipToast && (
+        <TipToast
+          message={tipToast.message}
+          type={tipToast.type}
+          duration={2000}
+          onHide={() => setTipToast(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -668,13 +758,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 12,
     minWidth: 200,
-    zIndex: 1001,
+    zIndex: 1002,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
   },
   menuItem: {
     flexDirection: 'row',
@@ -733,7 +823,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     borderRadius: 16,
     paddingHorizontal: 20,
     paddingVertical: 12,
@@ -757,7 +847,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 999,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    zIndex: 1000,
   },
   categoriesScroll: {
     backgroundColor: '#FFFFFF',
@@ -794,11 +885,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
   },
   categoryChipActive: {
     backgroundColor: '#667eea',
     borderColor: '#667eea',
+  },
+  categoryChipPinned: {
+    borderColor: '#667eea',
+    borderWidth: 1.5,
+  },
+  pinIcon: {
+    marginRight: 4,
   },
   categoryText: {
     fontSize: 14,
@@ -850,7 +948,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     margin: 8,
     overflow: 'hidden',
   },
@@ -896,6 +994,12 @@ const styles = StyleSheet.create({
     elevation: 3,
     zIndex: 2,
   },
+  addToCartButtonWrapper: {
+    marginTop: 12,
+    borderRadius: 14,
+    padding: 1.5,
+    overflow: 'hidden',
+  },
   addToCartButton: {
     marginTop: 12,
     borderRadius: 12,
@@ -910,6 +1014,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  addToCartButtonInCart: {
+    backgroundColor: '#F3F4F6',
+    marginTop: 0,
+    shadowColor: '#10B981',
+  },
   cartIcon: {
     marginRight: 6,
   },
@@ -917,6 +1026,37 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  removeFromCartText: {
+    color: '#667eea',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  gradientBorder: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderRadius: 14,
+    zIndex: -1,
+  },
+  imageOverlay: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  imageCountText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   productInfo: {
     padding: 16,
@@ -1049,7 +1189,7 @@ const styles = StyleSheet.create({
   },
   priceInputField: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,

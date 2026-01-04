@@ -14,11 +14,13 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/use-auth';
 import { router, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { useToast } from '@/components/ui/toast-provider';
+import { tokenStorage } from '@/lib/auth/storage';
 
 // Complete Google OAuth web browser session
 WebBrowser.maybeCompleteAuthSession();
@@ -29,6 +31,8 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const { signup, signin, isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const routerHook = useRouter();
@@ -67,6 +71,20 @@ export default function AuthScreen() {
       routerHook.replace('/');
     }
   }, [isAuthenticated]);
+
+  // Load remembered account info on mount (only for sign in)
+  useEffect(() => {
+    if (!isSignup) {
+      const loadRememberedAccount = async () => {
+        const remembered = await tokenStorage.getRememberedAccount();
+        if (remembered) {
+          // Don't set email, but we could set other fields if needed
+          setRememberMe(true);
+        }
+      };
+      loadRememberedAccount();
+    }
+  }, [isSignup]);
 
   // Handle Google OAuth response
   useEffect(() => {
@@ -108,6 +126,16 @@ export default function AuthScreen() {
       }
     } catch (error) {
       // Clipboard access failed, ignore
+    }
+  };
+
+  // Handle opening terms and privacy policy
+  const handleOpen = (type: string, title: string) => {
+    if (type === 'terms-of-service') {
+      router.push('/terms-and-conditions');
+    } else if (type === 'privacy-policy') {
+      // For now, route to terms and conditions. You can create a separate privacy policy page later
+      router.push('/terms-and-conditions');
     }
   };
 
@@ -170,8 +198,21 @@ export default function AuthScreen() {
         }, 1000);
       } catch (error: any) {
         console.error('Signup error:', error);
-        const errorMessage = error.message || error.response?.data?.message || 'Failed to create account. Please try again.';
-        showToast(errorMessage, 'error');
+        // Extract and display detailed error message
+        let errorMessage = 'Failed to create account. Please try again.';
+        
+        if (error?.message) {
+          errorMessage = error.message;
+        } else if (error?.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error?.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        }
+        
+        // Show error with longer duration for better readability
+        showToast(errorMessage, 'error', 4000);
       } finally {
         setIsLoading(false);
       }
@@ -179,10 +220,43 @@ export default function AuthScreen() {
       setIsLoading(true);
       try {
         await signin(email.trim(), password);
+        
+        // Handle remember me - save account info (except email) if checked
+        if (rememberMe) {
+          const user = await tokenStorage.getUser();
+          if (user) {
+            const accountInfo: { firstName?: string; lastName?: string; phone?: string } = {};
+            if (user.firstName) accountInfo.firstName = user.firstName;
+            if (user.lastName) accountInfo.lastName = user.lastName;
+            if (user.phone) accountInfo.phone = user.phone;
+            
+            // Only save if there's something to save
+            if (Object.keys(accountInfo).length > 0) {
+              await tokenStorage.setRememberedAccount(accountInfo);
+            }
+          }
+        } else {
+          // Clear remembered account if remember me is unchecked
+          await tokenStorage.clearRememberedAccount();
+        }
+        
         showToast('Signed in successfully!', 'success');
       } catch (error: any) {
-        const errorMessage = error.message || 'Authentication failed';
-        showToast(errorMessage, 'error');
+        // Extract and display detailed error message
+        let errorMessage = 'Authentication failed';
+        
+        if (error?.message) {
+          errorMessage = error.message;
+        } else if (error?.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error?.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        }
+        
+        // Show error with longer duration for better readability
+        showToast(errorMessage, 'error', 4000);
       } finally {
         setIsLoading(false);
       }
@@ -288,8 +362,8 @@ export default function AuthScreen() {
           </View>
           <Text style={styles.tagline}>
             {isSignup
-              ? 'Join thousands of smart shoppers'
-              : 'Sign in to continue to PricePulse AI'}
+              ? 'Create your account to start managing your assets with Rosie AI'
+              : 'Welcome back to Rosievision'}
           </Text>
         </View>
 
@@ -319,7 +393,7 @@ export default function AuthScreen() {
                   !nameFocused && hasNameValue && styles.floatingLabelInactive,
                 ]}
               >
-                Full Name
+                Name e.g(John Philip)
               </Text>
             </View>
           )}
@@ -370,6 +444,7 @@ export default function AuthScreen() {
             <TextInput
               style={[
                 styles.input,
+                styles.passwordInput,
                 passwordFocused ? styles.inputFocused : null,
               ]}
               placeholder=""
@@ -387,13 +462,24 @@ export default function AuthScreen() {
                   }
                 }
               }}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               autoComplete={isSignup ? 'password-new' : 'password'}
               onLongPress={async () => {
                 // Long press to paste
                 await handlePaste(setPassword);
               }}
             />
+            <TouchableOpacity
+              style={styles.eyeIcon}
+              onPress={() => setShowPassword(!showPassword)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color="#9CA3AF"
+              />
+            </TouchableOpacity>
             <Text
               style={[
                 styles.floatingLabel,
@@ -405,12 +491,25 @@ export default function AuthScreen() {
               Password
             </Text>
             {!isSignup && (
-              <TouchableOpacity
-                onPress={() => router.push('/auth/forgot-password')}
-                style={styles.forgotPasswordLink}
-              >
-                <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-              </TouchableOpacity>
+              <View style={styles.passwordOptions}>
+                <TouchableOpacity
+                  onPress={() => setRememberMe(!rememberMe)}
+                  style={styles.rememberMeContainer}
+                >
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                    {rememberMe && (
+                      <Text style={styles.checkmark}>✓</Text>
+                    )}
+                  </View>
+                  <Text style={styles.rememberMeText}>Remember me</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push('/auth/forgot-password')}
+                  style={styles.forgotPasswordLink}
+                >
+                  <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
 
@@ -465,7 +564,7 @@ export default function AuthScreen() {
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={['#667eea', '#764ba2']}
+              colors={['#3b82f6', '#8b5cf6']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={StyleSheet.absoluteFillObject}
@@ -474,7 +573,7 @@ export default function AuthScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.primaryButtonText}>
-                {isSignup ? 'Create Account' : 'Sign In'}
+                {isSignup ? 'Create Account' : 'Sign In to Continue'}
               </Text>
             )}
           </TouchableOpacity>
@@ -493,12 +592,20 @@ export default function AuthScreen() {
             activeOpacity={0.7}
             disabled={!request}
           >
-            <Image
-              source={require('@/assets/images/googleG.png')}
-              style={styles.googleIcon}
-              resizeMode="contain"
+            <LinearGradient
+              colors={['#ffffff', '#f8fafc']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFillObject}
             />
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
+            <View style={styles.googleButtonContent}>
+              <Image
+                source={require('@/assets/images/googleG.png')}
+                style={styles.googleIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.googleButtonText}>Continue with Google</Text>
+            </View>
           </TouchableOpacity>
 
           {/* Switch Auth Mode */}
@@ -508,10 +615,30 @@ export default function AuthScreen() {
             </Text>
             <TouchableOpacity onPress={() => setIsSignup(!isSignup)}>
               <Text style={styles.switchLink}>
-                {isSignup ? 'Sign In' : 'Sign Up'}
+                {isSignup ? 'Sign In' : 'Create Account'}
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Terms and Privacy Policy Agreement - Only for Signup */}
+          {isSignup && (
+            <Text style={styles.agreementText}>
+              By continuing, you agree to our{' '}
+              <Text
+                style={styles.agreementLink}
+                onPress={() => handleOpen('terms-of-service', 'Terms of Service')}
+              >
+                Terms of Service
+              </Text>{' '}
+              and{' '}
+              <Text
+                style={styles.agreementLink}
+                onPress={() => handleOpen('privacy-policy', 'Privacy Policy')}
+              >
+                Privacy Policy
+              </Text>
+            </Text>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -531,7 +658,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 56,
+    marginBottom: 40,
     marginTop: 24,
   },
   logoContainer: {
@@ -547,6 +674,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
     fontWeight: '500',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    lineHeight: 24,
   },
   formContainer: {
     flex: 1,
@@ -559,7 +689,7 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
     borderRadius: 20,
     paddingHorizontal: 24,
     paddingTop: 28,
@@ -568,8 +698,18 @@ const styles = StyleSheet.create({
     color: '#111827',
     height: 80,
   },
+  passwordInput: {
+    paddingRight: 50,
+  },
+  eyeIcon: {
+    position: 'absolute',
+    right: 24,
+    top: 30,
+    padding: 4,
+    zIndex: 1,
+  },
   inputFocused: {
-    borderColor: '#667eea',
+    borderColor: '#2563eb',
     borderWidth: 1,
   },
   floatingLabel: {
@@ -584,7 +724,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   floatingLabelFocused: {
-    color: '#667eea',
+    color: '#2563eb',
   },
   floatingLabelActive: {
     top: 8,
@@ -594,23 +734,66 @@ const styles = StyleSheet.create({
   floatingLabelInactive: {
     color: '#9CA3AF',
   },
-  forgotPasswordLink: {
-    alignSelf: 'flex-end',
+  passwordOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: 16,
   },
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#9CA3AF',
+    marginRight: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+    borderWidth: 2,
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    lineHeight: 18,
+  },
+  rememberMeText: {
+    fontSize: 15,
+    color: '#374151',
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  forgotPasswordLink: {
+    // No additional styles needed, positioned by flexbox
+  },
   forgotPasswordText: {
-    fontSize: 16,
-    color: '#667eea',
+    fontSize: 14,
+    color: '#2563eb',
     fontWeight: '600',
   },
   primaryButton: {
     borderRadius: 20,
-    paddingVertical: 24,
+    paddingVertical: 20,
     alignItems: 'center',
     marginTop: 24,
     marginBottom: 20,
     overflow: 'hidden',
-    shadowColor: '#667eea',
+    shadowColor: '#a855f7',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -642,15 +825,17 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   googleButton: {
+    borderRadius: 20,
+    paddingVertical: 20,
+    marginBottom: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  googleButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 20,
-    paddingVertical: 22,
-    marginBottom: 20,
   },
   googleIcon: {
     width: 24,
@@ -666,6 +851,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    flexWrap: 'wrap',
   },
   switchText: {
     fontSize: 16,
@@ -673,8 +859,22 @@ const styles = StyleSheet.create({
   },
   switchLink: {
     fontSize: 16,
-    color: '#667eea',
+    color: '#2563eb',
     fontWeight: '600',
+  },
+  agreementText: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 'auto',
+    marginBottom: 30,
+    paddingHorizontal: 20,
+    lineHeight: 18,
+  },
+  agreementLink: {
+    color: '#2563eb',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   passwordStrengthContainer: {
     marginTop: 12,
@@ -683,7 +883,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#9CA3AF',
   },
   strengthBarContainer: {
     height: 6,

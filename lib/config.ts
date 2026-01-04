@@ -1,4 +1,11 @@
-import Constants from 'expo-constants';
+// Safely import Constants with fallback
+let Constants: any = null;
+try {
+  Constants = require('expo-constants').default;
+} catch (e) {
+  // Constants module not available, will use fallback values
+  console.warn('expo-constants not available, using fallback values');
+}
 
 /**
  * Centralized configuration using environment variables
@@ -22,8 +29,8 @@ export const GOOGLE_OAUTH_CONFIG = {
 
 // App Configuration
 export const APP_CONFIG = {
-  APP_NAME: Constants.expoConfig?.name || 'PricePulse AI',
-  APP_VERSION: Constants.expoConfig?.version || '1.0.0',
+  APP_NAME: Constants?.expoConfig?.name || 'Rosie',
+  APP_VERSION: Constants?.expoConfig?.version || '1.0.0',
   ENVIRONMENT: process.env.EXPO_PUBLIC_ENVIRONMENT || 'development',
   DEBUG: process.env.EXPO_PUBLIC_DEBUG === 'true',
 };
