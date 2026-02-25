@@ -1,25 +1,20 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { tokenStorage } from '../auth/storage';
+import { getClerkToken } from '../clerk-token';
 import { Product } from './products';
-import { setupRefreshTokenInterceptor } from './interceptors';
 
 const client = axios.create({
   baseURL: `${API_CONFIG.BASE_URL}/wishlist`,
   timeout: API_CONFIG.TIMEOUT,
 });
 
-// Add auth token to requests
 client.interceptors.request.use(async (config) => {
-  const token = await tokenStorage.getAccessToken();
+  const token = await getClerkToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
-
-// Setup refresh token interceptor
-setupRefreshTokenInterceptor(client);
 
 export interface WishlistItem {
   id: string;

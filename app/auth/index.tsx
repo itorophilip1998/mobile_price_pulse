@@ -1,401 +1,227 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
+  Alert,
   ActivityIndicator,
   ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
-  Platform,
   Image,
-  Clipboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Image as ExpoImage } from 'expo-image';
+import { useSignIn, useAuth, useOAuth } from '@clerk/clerk-expo';
+import { router } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/hooks/use-auth';
-import { router, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import { useToast } from '@/components/ui/toast-provider';
+import { GoogleLogo } from '@/components/google-logo';
 import { tokenStorage } from '@/lib/auth/storage';
+import { profileAPI } from '@/lib/api/profile';
+import { API_CONFIG } from '@/lib/config';
 
-// Complete Google OAuth web browser session
-WebBrowser.maybeCompleteAuthSession();
+type RememberedAccount = { email: string; username?: string; imageUrl?: string };
 
 export default function AuthScreen() {
-  const [isSignup, setIsSignup] = useState(false);
+  const { isSignedIn } = useAuth();
+  const { isLoaded, signIn, setActive } = useSignIn();
+  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const { signup, signin, isAuthenticated } = useAuth();
-  const { showToast } = useToast();
-  const routerHook = useRouter();
-
-  // Floating label animations
-  const [nameFocused, setNameFocused] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberedAccount, setRememberedAccount] = useState<RememberedAccount | null>(null);
+  const passwordInputRef = useRef<TextInput>(null);
 
-  // Google OAuth - Use centralized config
-  const { GOOGLE_OAUTH_CONFIG, isGoogleOAuthConfigured } = require('@/lib/config');
-  
-  const isGoogleConfigured = isGoogleOAuthConfigured(Platform.OS as 'ios' | 'android' | 'web');
-
-  // Only initialize Google OAuth if properly configured
-  const googleConfig = isGoogleConfigured
-    ? {
-        clientId: GOOGLE_OAUTH_CONFIG.WEB_CLIENT_ID,
-        iosClientId: GOOGLE_OAUTH_CONFIG.IOS_CLIENT_ID,
-        androidClientId: GOOGLE_OAUTH_CONFIG.ANDROID_CLIENT_ID,
-      }
-    : null;
-
-  const [request, response, promptAsync] = Google.useAuthRequest(
-    googleConfig || {
-      // Provide dummy values to prevent errors, but it won't work
-      clientId: 'dummy',
-      iosClientId: Platform.OS === 'ios' ? 'dummy' : undefined,
-      androidClientId: Platform.OS === 'android' ? 'dummy' : undefined,
-    }
-  );
-
-  // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      routerHook.replace('/');
+    if (isSignedIn) {
+      router.replace('/marketplace');
     }
-  }, [isAuthenticated]);
+  }, [isSignedIn]);
 
-  // Load remembered account info on mount (only for sign in)
   useEffect(() => {
-    if (!isSignup) {
-      const loadRememberedAccount = async () => {
-        const remembered = await tokenStorage.getRememberedAccount();
-        if (remembered) {
-          // Don't set email, but we could set other fields if needed
-          setRememberMe(true);
-        }
-      };
-      loadRememberedAccount();
-    }
-  }, [isSignup]);
+    tokenStorage.getRememberedAccount().then((account) => {
+      setRememberedAccount(account);
+    });
+  }, []);
 
-  // Handle Google OAuth response
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      handleGoogleSignIn(authentication?.accessToken);
-    } else if (response?.type === 'error') {
-      showToast('Google sign in failed. Please try again.', 'error');
-    }
-  }, [response]);
-
-  // Validate email format
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
-
-  // Validate password strength
-  const validatePassword = (password: string): { valid: boolean; message?: string } => {
-    if (password.length < 8) {
-      return { valid: false, message: 'Password must be at least 8 characters long' };
-    }
-    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password)) {
-      return { valid: false, message: 'Password must contain both uppercase and lowercase letters' };
-    }
-    if (!/\d/.test(password) || !/[@$!%*?&]/.test(password)) {
-      return { valid: false, message: 'Password must contain at least one number and one special character' };
-    }
-    return { valid: true };
-  };
-
-  // Handle paste for TextInput
-  const handlePaste = async (setter: (value: string) => void) => {
+  const handleGoogleSignIn = async () => {
+    if (!isLoaded) return;
+    setIsGoogleLoading(true);
     try {
-      const clipboardContent = await Clipboard.getString();
-      if (clipboardContent) {
-        setter(clipboardContent.trim());
-        showToast('Pasted from clipboard', 'info', 2000);
-      }
-    } catch (error) {
-      // Clipboard access failed, ignore
-    }
-  };
-
-  // Handle opening terms and privacy policy
-  const handleOpen = (type: string, title: string) => {
-    if (type === 'terms-of-service') {
-      router.push('/terms-and-conditions');
-    } else if (type === 'privacy-policy') {
-      // For now, route to terms and conditions. You can create a separate privacy policy page later
-      router.push('/terms-and-conditions');
-    }
-  };
-
-  const handleSubmit = async () => {
-    // Validate email
-    if (!email || !email.trim()) {
-      showToast('Please enter your email address', 'error');
-      return;
-    }
-
-    if (!validateEmail(email)) {
-      showToast('Please enter a valid email address', 'error');
-      return;
-    }
-
-    // Validate password
-    if (!password || !password.trim()) {
-      showToast('Please enter your password', 'error');
-      return;
-    }
-
-    if (isSignup) {
-      // Validate full name
-      const trimmedFullName = fullName.trim();
-      if (!trimmedFullName || trimmedFullName.length < 2) {
-        showToast('Please enter your full name', 'error');
-        return;
-      }
-      
-      // Ensure we have both first and last name
-      const nameParts = trimmedFullName.split(/\s+/).filter(part => part.length > 0);
-      if (nameParts.length < 2) {
-        showToast('Please enter both first and last name', 'error');
-        return;
-      }
-      
-      const finalFirstName = nameParts[0];
-      const finalLastName = nameParts.slice(1).join(' ');
-      
-      if (!finalFirstName || !finalLastName) {
-        showToast('Please enter both first and last name', 'error');
-        return;
-      }
-
-      // Validate password strength
-      const passwordValidation = validatePassword(password);
-      if (!passwordValidation.valid) {
-        showToast(passwordValidation.message || 'Password does not meet requirements', 'error');
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        const result = await signup({ email: email.trim(), password, firstName: finalFirstName, lastName: finalLastName });
-        // Store email for verification screen
-        const verifyEmailUrl = `/auth/verify-email?email=${encodeURIComponent(email.trim())}`;
-        showToast('Account created! Check your email for verification code', 'success');
-        setTimeout(() => {
-          router.push(verifyEmailUrl);
-        }, 1000);
-      } catch (error: any) {
-        console.error('Signup error:', error);
-        // Extract and display detailed error message
-        let errorMessage = 'Failed to create account. Please try again.';
-        
-        if (error?.message) {
-          errorMessage = error.message;
-        } else if (error?.response?.data?.message) {
-          errorMessage = error.response.data.message;
-        } else if (error?.response?.data?.error) {
-          errorMessage = error.response.data.error;
-        } else if (typeof error === 'string') {
-          errorMessage = error;
-        }
-        
-        // Show error with longer duration for better readability
-        showToast(errorMessage, 'error', 4000);
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      setIsLoading(true);
-      try {
-        await signin(email.trim(), password);
-        
-        // Handle remember me - save account info (except email) if checked
+      const result = await startOAuthFlow({
+        redirectUrl: Linking.createURL('/auth/callback', { scheme: 'pricepulse' }),
+      });
+      if (result?.createdSessionId && result?.setActive) {
+        await result.setActive({ session: result.createdSessionId });
         if (rememberMe) {
-          const user = await tokenStorage.getUser();
-          if (user) {
-            const accountInfo: { firstName?: string; lastName?: string; phone?: string } = {};
-            if (user.firstName) accountInfo.firstName = user.firstName;
-            if (user.lastName) accountInfo.lastName = user.lastName;
-            if (user.phone) accountInfo.phone = user.phone;
-            
-            // Only save if there's something to save
-            if (Object.keys(accountInfo).length > 0) {
-              await tokenStorage.setRememberedAccount(accountInfo);
-            }
+          try {
+            const u = await profileAPI.getCurrentUser();
+            const displayName =
+              [u.profile?.firstName, u.profile?.lastName].filter(Boolean).join(' ') ||
+              u.email.split('@')[0];
+            await tokenStorage.setRememberedAccount({
+              email: u.email,
+              username: displayName || undefined,
+              imageUrl: u.profile?.avatar,
+            });
+          } catch {
+            // ignore – user is signed in
           }
-        } else {
-          // Clear remembered account if remember me is unchecked
-          await tokenStorage.clearRememberedAccount();
         }
-        
-        showToast('Signed in successfully!', 'success');
-      } catch (error: any) {
-        // Extract and display detailed error message
-        let errorMessage = 'Authentication failed';
-        
-        if (error?.message) {
-          errorMessage = error.message;
-        } else if (error?.response?.data?.message) {
-          errorMessage = error.response.data.message;
-        } else if (error?.response?.data?.error) {
-          errorMessage = error.response.data.error;
-        } else if (typeof error === 'string') {
-          errorMessage = error;
+        router.replace('/marketplace');
+      } else if (result?.authSessionResult?.type !== 'success') {
+        // User cancelled or flow failed
+        if (result?.authSessionResult?.type !== 'cancel') {
+          Alert.alert('Sign in cancelled', 'Google sign-in was not completed.');
         }
-        
-        // Show error with longer duration for better readability
-        showToast(errorMessage, 'error', 4000);
-      } finally {
-        setIsLoading(false);
       }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
+      Alert.alert('Google sign-in failed', String(message));
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
-  // Helper function for strength color
-  const getStrengthColor = (strength: 'weak' | 'acceptable' | 'good' | 'strong'): string => {
-    switch (strength) {
-      case 'weak':
-        return '#EF4444';
-      case 'acceptable':
-        return '#F59E0B';
-      case 'good':
-        return '#3B82F6';
-      case 'strong':
-        return '#10B981';
-      default:
-        return '#9CA3AF';
+  const handleSignIn = async () => {
+    if (!isLoaded || !signIn) return;
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
     }
-  };
-
-  const handleGoogleSignIn = async (accessToken?: string) => {
-    if (!isGoogleConfigured) {
-      showToast('Google sign in is not configured', 'error');
+    if (!password) {
+      Alert.alert('Error', 'Please enter your password');
       return;
     }
 
-    if (!accessToken) {
-      if (!request) {
-        showToast('Google sign in is not ready', 'error');
-        return;
+    setIsLoading(true);
+    try {
+      const result = await signIn.create({
+        identifier: email.trim(),
+        strategy: 'password',
+        password,
+      });
+      if (result.status === 'complete' && result.createdSessionId) {
+        await setActive({ session: result.createdSessionId });
+        if (rememberMe) {
+          try {
+            const u = await profileAPI.getCurrentUser();
+            const displayName =
+              [u.profile?.firstName, u.profile?.lastName].filter(Boolean).join(' ') ||
+              u.email.split('@')[0];
+            await tokenStorage.setRememberedAccount({
+              email: u.email,
+              username: displayName || undefined,
+              imageUrl: u.profile?.avatar,
+            });
+          } catch {
+            // ignore – user is signed in, remember me is best-effort
+          }
+        }
+        router.replace('/marketplace');
+      } else {
+        Alert.alert('Error', 'Sign-in could not be completed. Please try again.');
       }
-      try {
-        await promptAsync();
-      } catch (error: any) {
-        showToast('Failed to initiate Google sign in', 'error');
-      }
-      return;
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === 'object' && 'errors' in err
+          ? (err as { errors: Array<{ message?: string }> }).errors?.[0]?.message
+          : err instanceof Error
+            ? err.message
+            : 'Invalid email or password. Please try again.';
+      Alert.alert('Sign in failed', String(message));
+    } finally {
+      setIsLoading(false);
     }
-
-    // TODO: Send accessToken to backend for verification and token exchange
-    showToast('Google sign in will be fully implemented with backend integration', 'info');
   };
 
-  const hasNameValue = fullName.trim().length > 0;
   const hasEmailValue = email.length > 0;
   const hasPasswordValue = password.length > 0;
 
-  // Password strength checker
-  const getPasswordStrength = (pwd: string): { strength: 'weak' | 'acceptable' | 'good' | 'strong'; score: number } => {
-    if (!pwd) return { strength: 'weak', score: 0 };
-    
-    let score = 0;
-    const checks = {
-      length: pwd.length >= 8,
-      uppercase: /[A-Z]/.test(pwd),
-      lowercase: /[a-z]/.test(pwd),
-      number: /\d/.test(pwd),
-      special: /[@$!%*?&]/.test(pwd),
-    };
-
-    if (checks.length) score += 1;
-    if (checks.uppercase) score += 1;
-    if (checks.lowercase) score += 1;
-    if (checks.number) score += 1;
-    if (checks.special) score += 1;
-
-    if (score <= 2) return { strength: 'weak', score };
-    if (score === 3) return { strength: 'acceptable', score };
-    if (score === 4) return { strength: 'good', score };
-    return { strength: 'strong', score };
-  };
-
-  // Password rules checker
-  const passwordRules = {
-    length: password.length >= 8,
-    case: /[A-Z]/.test(password) && /[a-z]/.test(password),
-    numberSpecial: /\d/.test(password) && /[@$!%*?&]/.test(password),
-  };
-
-  const passwordStrength = getPasswordStrength(password);
-  const showPasswordIndicator = isSignup && (passwordFocused || hasPasswordValue);
+  if (!isLoaded) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#667eea" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
     >
       <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <ExpoImage
-              source={require('@/assets/images/applogo.png')}
-              style={styles.logoImage}
-              contentFit="contain"
-            />
-          </View>
-          <Text style={styles.tagline}>
-            {isSignup
-              ? 'Create your account to start managing your assets with Rosie AI'
-              : 'Welcome back to Rosievision'}
-          </Text>
-        </View>
-
-        {/* Auth Form - Full Screen */}
         <View style={styles.formContainer}>
-          {isSignup && (
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={[
-                  styles.input,
-                  nameFocused ? styles.inputFocused : null,
-                ]}
-                placeholder=""
-                placeholderTextColor="transparent"
-                value={fullName}
-                onChangeText={setFullName}
-                onFocus={() => setNameFocused(true)}
-                onBlur={() => setNameFocused(false)}
-                autoCapitalize="words"
-                autoCorrect={false}
-              />
-              <Text
-                style={[
-                  styles.floatingLabel,
-                  nameFocused && styles.floatingLabelFocused,
-                  (nameFocused || hasNameValue) && styles.floatingLabelActive,
-                  !nameFocused && hasNameValue && styles.floatingLabelInactive,
-                ]}
-              >
-                Name e.g(John Philip)
-              </Text>
-            </View>
+          <Text style={styles.title}>Welcome back</Text>
+          <Text style={styles.subtitle}>
+            Use your email and password, or sign in with Google.
+          </Text>
+
+          {rememberedAccount && (
+            <TouchableOpacity
+              style={styles.rememberedCard}
+              onPress={() => {
+                setEmail(rememberedAccount.email);
+                setTimeout(() => passwordInputRef.current?.focus(), 100);
+              }}
+              activeOpacity={0.8}
+              disabled={isLoading}
+            >
+              <View style={styles.rememberedAvatar}>
+                {rememberedAccount.imageUrl ? (
+                  <Image
+                    source={{
+                      uri: rememberedAccount.imageUrl.startsWith('http')
+                        ? rememberedAccount.imageUrl
+                        : `${API_CONFIG.BASE_URL.replace(/\/$/, '')}${rememberedAccount.imageUrl.startsWith('/') ? '' : '/'}${rememberedAccount.imageUrl}`,
+                    }}
+                    style={styles.rememberedAvatarImage}
+                  />
+                ) : (
+                  <Text style={styles.rememberedAvatarText}>
+                    {(rememberedAccount.username || rememberedAccount.email)[0].toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.rememberedInfo}>
+                <Text style={styles.rememberedName} numberOfLines={1}>
+                  {rememberedAccount.username || rememberedAccount.email.split('@')[0]}
+                </Text>
+                <Text style={styles.rememberedEmail} numberOfLines={1}>
+                  {rememberedAccount.email}
+                </Text>
+              </View>
+              <Text style={styles.continueAsHint}>Tap to sign in</Text>
+            </TouchableOpacity>
+          )}
+
+          {rememberedAccount && (
+            <TouchableOpacity
+              onPress={async () => {
+                await tokenStorage.clearRememberedAccount();
+                setRememberedAccount(null);
+              }}
+              style={styles.useAnotherAccount}
+            >
+              <Text style={styles.useAnotherAccountText}>Use another account</Text>
+            </TouchableOpacity>
           )}
 
           <View style={styles.inputWrapper}>
@@ -407,26 +233,14 @@ export default function AuthScreen() {
               placeholder=""
               placeholderTextColor="transparent"
               value={email}
-              onChangeText={(text) => {
-                // Trim and validate email format as user types
-                setEmail(text.trim().toLowerCase());
-              }}
+              onChangeText={setEmail}
               onFocus={() => setEmailFocused(true)}
-              onBlur={() => {
-                setEmailFocused(false);
-                // Validate email on blur
-                if (email && !validateEmail(email)) {
-                  showToast('Please enter a valid email address', 'error', 2000);
-                }
-              }}
+              onBlur={() => setEmailFocused(false)}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="email"
-              onLongPress={async () => {
-                // Long press to paste
-                await handlePaste(setEmail);
-              }}
+              editable={!isLoading}
             />
             <Text
               style={[
@@ -444,7 +258,7 @@ export default function AuthScreen() {
             <TextInput
               style={[
                 styles.input,
-                styles.passwordInput,
+                styles.inputWithEye,
                 passwordFocused ? styles.inputFocused : null,
               ]}
               placeholder=""
@@ -452,119 +266,67 @@ export default function AuthScreen() {
               value={password}
               onChangeText={setPassword}
               onFocus={() => setPasswordFocused(true)}
-              onBlur={() => {
-                setPasswordFocused(false);
-                // Validate password on blur (only for signup)
-                if (isSignup && password) {
-                  const passwordValidation = validatePassword(password);
-                  if (!passwordValidation.valid) {
-                    showToast(passwordValidation.message || 'Password does not meet requirements', 'warning', 3000);
-                  }
-                }
-              }}
+              onBlur={() => setPasswordFocused(false)}
+              ref={passwordInputRef}
               secureTextEntry={!showPassword}
-              autoComplete={isSignup ? 'password-new' : 'password'}
-              onLongPress={async () => {
-                // Long press to paste
-                await handlePaste(setPassword);
-              }}
+              autoCapitalize="none"
+              autoComplete="password"
+              editable={!isLoading}
             />
-            <TouchableOpacity
-              style={styles.eyeIcon}
-              onPress={() => setShowPassword(!showPassword)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color="#9CA3AF"
-              />
-            </TouchableOpacity>
             <Text
               style={[
                 styles.floatingLabel,
                 passwordFocused && styles.floatingLabelFocused,
-                (passwordFocused || hasPasswordValue) && styles.floatingLabelActive,
-                !passwordFocused && hasPasswordValue && styles.floatingLabelInactive,
+                (passwordFocused || hasPasswordValue) &&
+                  styles.floatingLabelActive,
+                !passwordFocused &&
+                  hasPasswordValue &&
+                  styles.floatingLabelInactive,
               ]}
             >
               Password
             </Text>
-            {!isSignup && (
-              <View style={styles.passwordOptions}>
-                <TouchableOpacity
-                  onPress={() => setRememberMe(!rememberMe)}
-                  style={styles.rememberMeContainer}
-                >
-                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                    {rememberMe && (
-                      <Text style={styles.checkmark}>✓</Text>
-                    )}
-                  </View>
-                  <Text style={styles.rememberMeText}>Remember me</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => router.push('/auth/forgot-password')}
-                  style={styles.forgotPasswordLink}
-                >
-                  <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            <TouchableOpacity
+              onPress={() => setShowPassword((v) => !v)}
+              style={styles.eyeButton}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={22}
+                color="#6B7280"
+              />
+            </TouchableOpacity>
           </View>
 
-          {/* Password Strength Indicator - Only show on signup */}
-          {showPasswordIndicator && (
-            <View style={styles.passwordStrengthContainer}>
-              {/* Strength Bar */}
-              <View style={styles.strengthBarContainer}>
-                <View style={[styles.strengthBar, { width: `${(passwordStrength.score / 5) * 100}%`, backgroundColor: getStrengthColor(passwordStrength.strength) }]} />
-              </View>
-              
-              {/* Strength Text */}
-              <Text style={[styles.strengthText, { color: getStrengthColor(passwordStrength.strength) }]}>
-                {passwordStrength.strength.charAt(0).toUpperCase() + passwordStrength.strength.slice(1)}
-              </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/auth/forgot-password')}
+            style={styles.forgotPasswordLink}
+            disabled={isLoading}
+          >
+            <Text style={styles.forgotPasswordLinkText}>Forgot password?</Text>
+          </TouchableOpacity>
 
-              {/* Password Rules */}
-              <View style={styles.rulesContainer}>
-                <View style={styles.ruleItem}>
-                  <Text style={[styles.ruleIcon, passwordRules.length && styles.ruleIconValid]}>
-                    {passwordRules.length ? '✓' : '○'}
-                  </Text>
-                  <Text style={[styles.ruleText, passwordRules.length && styles.ruleTextValid]}>
-                    At least 8 characters
-                  </Text>
-                </View>
-                <View style={styles.ruleItem}>
-                  <Text style={[styles.ruleIcon, passwordRules.case && styles.ruleIconValid]}>
-                    {passwordRules.case ? '✓' : '○'}
-                  </Text>
-                  <Text style={[styles.ruleText, passwordRules.case && styles.ruleTextValid]}>
-                    Uppercase & lowercase letters
-                  </Text>
-                </View>
-                <View style={styles.ruleItem}>
-                  <Text style={[styles.ruleIcon, passwordRules.numberSpecial && styles.ruleIconValid]}>
-                    {passwordRules.numberSpecial ? '✓' : '○'}
-                  </Text>
-                  <Text style={[styles.ruleText, passwordRules.numberSpecial && styles.ruleTextValid]}>
-                    Number & special character
-                  </Text>
-                </View>
-              </View>
+          <TouchableOpacity
+            style={styles.rememberMeRow}
+            onPress={() => setRememberMe((v) => !v)}
+            disabled={isLoading}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+              {rememberMe && <Text style={styles.checkboxCheck}>✓</Text>}
             </View>
-          )}
+            <Text style={styles.rememberMeText}>Remember me</Text>
+          </TouchableOpacity>
 
-          {/* Primary Button */}
           <TouchableOpacity
             style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
-            onPress={handleSubmit}
+            onPress={handleSignIn}
             disabled={isLoading}
             activeOpacity={0.8}
           >
             <LinearGradient
-              colors={['#3b82f6', '#8b5cf6']}
+              colors={['#667eea', '#764ba2']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={StyleSheet.absoluteFillObject}
@@ -572,73 +334,41 @@ export default function AuthScreen() {
             {isLoading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryButtonText}>
-                {isSignup ? 'Create Account' : 'Sign In to Continue'}
-              </Text>
+              <Text style={styles.primaryButtonText}>Sign In</Text>
             )}
           </TouchableOpacity>
 
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Or continue with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Google Button */}
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={() => handleGoogleSignIn()}
-            activeOpacity={0.7}
-            disabled={!request}
-          >
-            <LinearGradient
-              colors={['#ffffff', '#f8fafc']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFillObject}
-            />
-            <View style={styles.googleButtonContent}>
-              <Image
-                source={require('@/assets/images/googleG.png')}
-                style={styles.googleIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
+          <View style={styles.socialSection}>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
             </View>
-          </TouchableOpacity>
-
-          {/* Switch Auth Mode */}
-          <View style={styles.switchContainer}>
-            <Text style={styles.switchText}>
-              {isSignup ? 'Already have an account? ' : "Don't have an account? "}
-            </Text>
-            <TouchableOpacity onPress={() => setIsSignup(!isSignup)}>
-              <Text style={styles.switchLink}>
-                {isSignup ? 'Sign In' : 'Create Account'}
+            <TouchableOpacity
+              style={[styles.googleButton, (isLoading || isGoogleLoading) && styles.buttonDisabled]}
+              onPress={handleGoogleSignIn}
+              disabled={isLoading || isGoogleLoading}
+              activeOpacity={0.8}
+            >
+              {isGoogleLoading ? (
+                <ActivityIndicator color="#333" />
+              ) : (
+                <>
+                  <GoogleLogo width={24} height={24} />
+                  <Text style={styles.googleButtonText}>Continue with Google</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push('/auth/sign-up')}
+              style={styles.secondaryButton}
+              disabled={isLoading}
+            >
+              <Text style={styles.secondaryButtonText}>
+                Don't have an account? <Text style={styles.secondaryButtonLink}>Sign Up</Text>
               </Text>
             </TouchableOpacity>
           </View>
-
-          {/* Terms and Privacy Policy Agreement - Only for Signup */}
-          {isSignup && (
-            <Text style={styles.agreementText}>
-              By continuing, you agree to our{' '}
-              <Text
-                style={styles.agreementLink}
-                onPress={() => handleOpen('terms-of-service', 'Terms of Service')}
-              >
-                Terms of Service
-              </Text>{' '}
-              and{' '}
-              <Text
-                style={styles.agreementLink}
-                onPress={() => handleOpen('privacy-policy', 'Privacy Policy')}
-              >
-                Privacy Policy
-              </Text>
-            </Text>
-          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -650,73 +380,176 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#6B7280',
+  },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 60,
-    paddingBottom: 40,
+    paddingBottom: 24,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 40,
-    marginTop: 24,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  logoImage: {
-    width: 200,
-    height: 60,
-  },
-  tagline: {
-    fontSize: 16,
-    color: '#6B7280',
-    fontWeight: '500',
-    textAlign: 'center',
-    paddingHorizontal: 20,
-    lineHeight: 24,
+  socialSection: {
+    marginTop: 8,
   },
   formContainer: {
     flex: 1,
     width: '100%',
   },
-  inputWrapper: {
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 56,
+    marginBottom: 12,
+    textAlign: 'center',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: '#6B7280',
+    marginBottom: 32,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  rememberedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  rememberedAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#667eea',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  rememberedAvatarImage: {
+    width: 44,
+    height: 44,
+  },
+  rememberedAvatarText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  rememberedInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  rememberedName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  rememberedEmail: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  continueAsHint: {
+    fontSize: 12,
+    color: '#667eea',
+    fontWeight: '600',
+  },
+  useAnotherAccount: {
+    alignSelf: 'flex-start',
     marginBottom: 20,
+  },
+  useAnotherAccountText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  rememberMeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: '#667eea',
+    borderColor: '#667eea',
+  },
+  checkboxCheck: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  rememberMeText: {
+    fontSize: 15,
+    color: '#374151',
+    marginLeft: 10,
+    fontWeight: '500',
+  },
+  inputWrapper: {
+    marginBottom: 16,
     position: 'relative',
+  },
+  forgotPasswordLink: {
+    alignSelf: 'flex-end',
+    marginBottom: 20,
+  },
+  forgotPasswordLinkText: {
+    fontSize: 14,
+    color: '#667eea',
+    fontWeight: '600',
   },
   input: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#9CA3AF',
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    paddingBottom: 16,
-    fontSize: 18,
+    borderColor: '#D1D5DB',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 12,
+    fontSize: 16,
     color: '#111827',
-    height: 80,
+    height: 64,
   },
-  passwordInput: {
-    paddingRight: 50,
+  inputWithEye: {
+    paddingRight: 56,
   },
-  eyeIcon: {
+  eyeButton: {
     position: 'absolute',
-    right: 24,
-    top: 30,
-    padding: 4,
-    zIndex: 1,
+    right: 16,
+    top: 20,
+    padding: 8,
   },
   inputFocused: {
-    borderColor: '#2563eb',
+    borderColor: '#667eea',
     borderWidth: 1,
   },
   floatingLabel: {
     position: 'absolute',
-    left: 24,
-    top: 28,
-    fontSize: 18,
+    left: 20,
+    top: 22,
+    fontSize: 15,
     color: '#9CA3AF',
     pointerEvents: 'none',
     backgroundColor: '#FFFFFF',
@@ -724,76 +557,23 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   floatingLabelFocused: {
-    color: '#2563eb',
+    color: '#667eea',
   },
   floatingLabelActive: {
-    top: 8,
-    fontSize: 12,
+    top: 6,
+    fontSize: 11,
     fontWeight: '600',
   },
   floatingLabelInactive: {
     color: '#9CA3AF',
   },
-  passwordOptions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  rememberMeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#9CA3AF',
-    marginRight: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  checkboxChecked: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
-    borderWidth: 2,
-  },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    lineHeight: 18,
-  },
-  rememberMeText: {
-    fontSize: 15,
-    color: '#374151',
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
-  forgotPasswordLink: {
-    // No additional styles needed, positioned by flexbox
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    color: '#2563eb',
-    fontWeight: '600',
-  },
   primaryButton: {
-    borderRadius: 20,
-    paddingVertical: 20,
+    borderRadius: 16,
+    paddingVertical: 18,
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 20,
+    marginBottom: 32,
     overflow: 'hidden',
-    shadowColor: '#a855f7',
+    shadowColor: '#667eea',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -808,124 +588,50 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
+  secondaryButton: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  secondaryButtonLink: {
+    color: '#667eea',
+    fontWeight: '700',
+  },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginVertical: 20,
+    gap: 12,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#D1D5DB',
   },
   dividerText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#9CA3AF',
-    marginHorizontal: 16,
     fontWeight: '500',
   },
   googleButton: {
-    borderRadius: 20,
-    paddingVertical: 20,
-    marginBottom: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  googleButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  googleIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 14,
+    gap: 10,
+    borderRadius: 16,
+    paddingVertical: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
   },
   googleButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 16,
     color: '#374151',
-  },
-  switchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  switchText: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  switchLink: {
-    fontSize: 16,
-    color: '#2563eb',
     fontWeight: '600',
-  },
-  agreementText: {
-    fontSize: 13,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginTop: 'auto',
-    marginBottom: 30,
-    paddingHorizontal: 20,
-    lineHeight: 18,
-  },
-  agreementLink: {
-    color: '#2563eb',
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-  passwordStrengthContainer: {
-    marginTop: 12,
-    marginBottom: 8,
-    padding: 16,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#9CA3AF',
-  },
-  strengthBarContainer: {
-    height: 6,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  strengthBar: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  strengthText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  rulesContainer: {
-    gap: 12,
-  },
-  ruleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  ruleIcon: {
-    fontSize: 16,
-    width: 20,
-    textAlign: 'center',
-    color: '#9CA3AF',
-    fontWeight: '600',
-  },
-  ruleIconValid: {
-    color: '#10B981',
-  },
-  ruleText: {
-    fontSize: 14,
-    color: '#6B7280',
-    flex: 1,
-  },
-  ruleTextValid: {
-    color: '#374151',
-    fontWeight: '500',
   },
 });

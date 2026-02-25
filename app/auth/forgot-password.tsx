@@ -11,54 +11,259 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { mobileAuthAPI } from '@/lib/auth/api';
+import { useSignIn } from '@clerk/clerk-expo';
 import { router } from 'expo-router';
+import { PasswordStrengthIndicator } from '@/components/auth/password-strength';
 
 export default function ForgotPasswordScreen() {
+  const { isLoaded, signIn, setActive } = useSignIn();
   const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
+  const [codeFocused, setCodeFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [confirmFocused, setConfirmFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const handleSubmit = async () => {
-    if (!email) {
+  const hasEmailValue = email.length > 0;
+  const hasCodeValue = code.length > 0;
+  const hasPasswordValue = password.length > 0;
+  const hasConfirmValue = confirmPassword.length > 0;
+
+  const handleSendCode = async () => {
+    if (!email.trim()) {
       Alert.alert('Error', 'Please enter your email address');
       return;
     }
+    if (!isLoaded || !signIn) return;
 
     setIsLoading(true);
     try {
-      await mobileAuthAPI.forgotPassword(email);
-      setIsSubmitted(true);
-    } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to send reset email');
+      await signIn.create({
+        strategy: 'reset_password_email_code',
+        identifier: email.trim(),
+      });
+      setCodeSent(true);
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'errors' in err
+          ? (err as { errors: Array<{ longMessage?: string; message?: string }> }).errors?.[0]
+              ?.longMessage ||
+            (err as { errors: Array<{ message?: string }> }).errors?.[0]?.message
+          : err instanceof Error
+            ? err.message
+            : 'Failed to send reset code. Please try again.';
+      Alert.alert('Error', String(msg));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const hasEmailValue = email.length > 0;
+  const handleResetPassword = async () => {
+    if (!code.trim()) {
+      Alert.alert('Error', 'Please enter the code from your email');
+      return;
+    }
+    if (!password || password.length < 8) {
+      Alert.alert('Error', 'Please enter a new password (at least 8 characters)');
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+    if (!isLoaded || !signIn) return;
 
-  if (isSubmitted) {
+    setIsLoading(true);
+    try {
+      let result = await signIn.attemptFirstFactor({
+        strategy: 'reset_password_email_code',
+        code: code.trim(),
+        password,
+      });
+      if (result.status === 'needs_new_password') {
+        result = await signIn.resetPassword({ password });
+      }
+      if (result.status === 'complete' && result.createdSessionId) {
+        await setActive({ session: result.createdSessionId });
+        router.replace('/marketplace');
+        return;
+      }
+      if (result.status === 'needs_second_factor') {
+        Alert.alert('Security check', 'Two-factor authentication is required. Please sign in again and complete 2FA.');
+        router.replace('/auth');
+        return;
+      }
+      Alert.alert('Error', 'Could not complete password reset. Please try again.');
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'errors' in err
+          ? (err as { errors: Array<{ longMessage?: string; message?: string }> }).errors?.[0]
+              ?.longMessage ||
+            (err as { errors: Array<{ message?: string }> }).errors?.[0]?.message
+          : err instanceof Error
+            ? err.message
+            : 'Failed to reset password. Please try again.';
+      Alert.alert('Error', String(msg));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isLoaded) {
     return (
       <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#667eea" />
+        </View>
+      </View>
+    );
+  }
+
+  if (codeSent) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+              <Text style={styles.backButtonText}>← Back</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.formContainer}>
-            <View style={styles.successIcon}>
-              <Text style={styles.successIconText}>✓</Text>
-            </View>
-            <Text style={styles.title}>Check Your Email</Text>
+            <Text style={styles.title}>Check your email</Text>
             <Text style={styles.subtitle}>
-              We've sent a password reset link to{'\n'}
+              We sent a 6-digit code to{'\n'}
               <Text style={styles.emailText}>{email}</Text>
+              {'\n'}Enter it below with your new password.
             </Text>
-            <Text style={styles.helpText}>
-              If you don't see the email, check your spam folder or try again.
-            </Text>
+
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={[styles.input, codeFocused ? styles.inputFocused : null]}
+                placeholder=""
+                placeholderTextColor="transparent"
+                value={code}
+                onChangeText={setCode}
+                onFocus={() => setCodeFocused(true)}
+                onBlur={() => setCodeFocused(false)}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoComplete="one-time-code"
+              />
+              <Text
+                style={[
+                  styles.floatingLabel,
+                  codeFocused && styles.floatingLabelFocused,
+                  (codeFocused || hasCodeValue) && styles.floatingLabelActive,
+                  !codeFocused && hasCodeValue && styles.floatingLabelInactive,
+                ]}
+              >
+                Reset code
+              </Text>
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.inputWithEye,
+                  passwordFocused ? styles.inputFocused : null,
+                ]}
+                placeholder=""
+                placeholderTextColor="transparent"
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => setPasswordFocused(false)}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoComplete="new-password"
+              />
+              <Text
+                style={[
+                  styles.floatingLabel,
+                  passwordFocused && styles.floatingLabelFocused,
+                  (passwordFocused || hasPasswordValue) && styles.floatingLabelActive,
+                  !passwordFocused && hasPasswordValue && styles.floatingLabelInactive,
+                ]}
+              >
+                New password
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowPassword((v) => !v)}
+                style={styles.eyeButton}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={22}
+                  color="#6B7280"
+                />
+              </TouchableOpacity>
+            </View>
+            {(passwordFocused || hasPasswordValue) && (
+              <PasswordStrengthIndicator password={password} />
+            )}
+
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.inputWithEye,
+                  confirmFocused ? styles.inputFocused : null,
+                ]}
+                placeholder=""
+                placeholderTextColor="transparent"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                onFocus={() => setConfirmFocused(true)}
+                onBlur={() => setConfirmFocused(false)}
+                secureTextEntry={!showConfirmPassword}
+                autoCapitalize="none"
+                autoComplete="new-password"
+              />
+              <Text
+                style={[
+                  styles.floatingLabel,
+                  confirmFocused && styles.floatingLabelFocused,
+                  (confirmFocused || hasConfirmValue) && styles.floatingLabelActive,
+                  !confirmFocused && hasConfirmValue && styles.floatingLabelInactive,
+                ]}
+              >
+                Confirm password
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword((v) => !v)}
+                style={styles.eyeButton}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={22}
+                  color="#6B7280"
+                />
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
-              onPress={() => router.replace('/auth')}
-              style={styles.primaryButton}
+              style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
+              onPress={handleResetPassword}
+              disabled={isLoading}
+              activeOpacity={0.8}
             >
               <LinearGradient
                 colors={['#667eea', '#764ba2']}
@@ -66,11 +271,22 @@ export default function ForgotPasswordScreen() {
                 end={{ x: 1, y: 0 }}
                 style={StyleSheet.absoluteFillObject}
               />
-              <Text style={styles.primaryButtonText}>Back to Sign In</Text>
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryButtonText}>Reset password</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setCodeSent(false)}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Use a different email</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -85,26 +301,20 @@ export default function ForgotPasswordScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.formContainer}>
-          <Text style={styles.title}>Reset Password</Text>
+          <Text style={styles.title}>Forgot your password?</Text>
           <Text style={styles.subtitle}>
-            Enter your email address and we'll send you a link to reset your password.
+            Enter your email and we'll send you a reset code.
           </Text>
 
           <View style={styles.inputWrapper}>
             <TextInput
-              style={[
-                styles.input,
-                emailFocused ? styles.inputFocused : null,
-              ]}
+              style={[styles.input, emailFocused ? styles.inputFocused : null]}
               placeholder=""
               placeholderTextColor="transparent"
               value={email}
@@ -130,7 +340,7 @@ export default function ForgotPasswordScreen() {
 
           <TouchableOpacity
             style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
-            onPress={handleSubmit}
+            onPress={handleSendCode}
             disabled={isLoading}
             activeOpacity={0.8}
           >
@@ -143,14 +353,11 @@ export default function ForgotPasswordScreen() {
             {isLoading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryButtonText}>Send Reset Link</Text>
+              <Text style={styles.primaryButtonText}>Send reset code</Text>
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.secondaryButton}
-          >
+          <TouchableOpacity onPress={() => router.back()} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>Cancel</Text>
           </TouchableOpacity>
         </View>
@@ -163,6 +370,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollContent: {
     flexGrow: 1,
@@ -179,7 +391,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   backButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#667eea',
     fontWeight: '600',
   },
@@ -187,62 +399,50 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
   },
-  successIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 32,
-  },
-  successIconText: {
-    fontSize: 40,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
   title: {
-    fontSize: 36,
+    fontSize: 28,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 20,
+    marginTop: 16,
+    marginBottom: 12,
     textAlign: 'center',
     letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 17,
+    fontSize: 15,
     color: '#6B7280',
-    marginBottom: 56,
+    marginBottom: 32,
     textAlign: 'center',
-    lineHeight: 26,
+    lineHeight: 22,
   },
   emailText: {
     fontWeight: '600',
     color: '#111827',
   },
-  helpText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    marginBottom: 48,
-    lineHeight: 20,
-  },
   inputWrapper: {
-    marginBottom: 40,
+    marginBottom: 16,
     position: 'relative',
   },
   input: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#9CA3AF',
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    paddingBottom: 16,
-    fontSize: 18,
+    borderColor: '#D1D5DB',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 12,
+    fontSize: 16,
     color: '#111827',
-    height: 80,
+    height: 56,
+  },
+  inputWithEye: {
+    paddingRight: 56,
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 16,
+    top: 17,
+    padding: 8,
   },
   inputFocused: {
     borderColor: '#667eea',
@@ -250,9 +450,9 @@ const styles = StyleSheet.create({
   },
   floatingLabel: {
     position: 'absolute',
-    left: 24,
-    top: 28,
-    fontSize: 18,
+    left: 20,
+    top: 20,
+    fontSize: 15,
     color: '#9CA3AF',
     pointerEvents: 'none',
     backgroundColor: '#FFFFFF',
@@ -263,18 +463,18 @@ const styles = StyleSheet.create({
     color: '#667eea',
   },
   floatingLabelActive: {
-    top: 8,
-    fontSize: 12,
+    top: 6,
+    fontSize: 11,
     fontWeight: '600',
   },
   floatingLabelInactive: {
     color: '#9CA3AF',
   },
   primaryButton: {
-    borderRadius: 20,
-    paddingVertical: 24,
+    borderRadius: 16,
+    paddingVertical: 18,
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
     overflow: 'hidden',
     shadowColor: '#667eea',
     shadowOffset: { width: 0, height: 4 },
@@ -287,16 +487,16 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   secondaryButton: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#6B7280',
     fontWeight: '600',
   },

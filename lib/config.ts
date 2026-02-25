@@ -8,13 +8,30 @@ try {
 }
 
 /**
+ * In development, when running on a physical device, localhost points to the device.
+ * Use the Expo dev server host so the app can reach the API on your machine.
+ */
+function getDevelopmentApiBaseUrl(): string {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl && envUrl !== 'http://localhost:3000') return envUrl;
+  try {
+    const hostUri = Constants?.expoConfig?.hostUri ?? Constants?.manifest?.debuggerHost;
+    const host = hostUri?.split(':')[0];
+    if (host) return `http://${host}:3000`;
+  } catch {
+    // ignore
+  }
+  return 'http://localhost:3000';
+}
+
+/**
  * Centralized configuration using environment variables
  * All environment variables should be prefixed with EXPO_PUBLIC_ to be accessible in the app
  */
 
 // API Configuration
 export const API_CONFIG = {
-  BASE_URL: process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000',
+  BASE_URL: getDevelopmentApiBaseUrl(),
   TIMEOUT: parseInt(process.env.EXPO_PUBLIC_API_TIMEOUT || '10000', 10),
   HEALTH_CHECK_ENDPOINT: '/health',
   AUTH_ENDPOINT: '/auth',
@@ -29,7 +46,7 @@ export const GOOGLE_OAUTH_CONFIG = {
 
 // App Configuration
 export const APP_CONFIG = {
-  APP_NAME: Constants?.expoConfig?.name || 'Rosie',
+  APP_NAME: Constants?.expoConfig?.name || 'PricePulse',
   APP_VERSION: Constants?.expoConfig?.version || '1.0.0',
   ENVIRONMENT: process.env.EXPO_PUBLIC_ENVIRONMENT || 'development',
   DEBUG: process.env.EXPO_PUBLIC_DEBUG === 'true',

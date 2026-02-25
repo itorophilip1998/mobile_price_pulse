@@ -76,8 +76,12 @@ export const tokenStorage = {
     }
   },
 
-  // Remember me functionality - save account info (except email)
-  setRememberedAccount: async (accountInfo: { firstName?: string; lastName?: string; phone?: string }): Promise<void> => {
+  /** Remember me: save account so user can tap to re-login (email pre-filled). */
+  setRememberedAccount: async (accountInfo: {
+    email: string;
+    username?: string;
+    imageUrl?: string;
+  }): Promise<void> => {
     try {
       await AsyncStorage.setItem(REMEMBER_ME_KEY, JSON.stringify(accountInfo));
     } catch (error) {
@@ -85,10 +89,21 @@ export const tokenStorage = {
     }
   },
 
-  getRememberedAccount: async (): Promise<{ firstName?: string; lastName?: string; phone?: string } | null> => {
+  getRememberedAccount: async (): Promise<{
+    email: string;
+    username?: string;
+    imageUrl?: string;
+  } | null> => {
     try {
       const accountStr = await AsyncStorage.getItem(REMEMBER_ME_KEY);
-      return accountStr ? JSON.parse(accountStr) : null;
+      if (!accountStr) return null;
+      const parsed = JSON.parse(accountStr) as { email?: string; username?: string; imageUrl?: string };
+      if (!parsed?.email) return null;
+      return {
+        email: parsed.email,
+        username: parsed.username,
+        imageUrl: parsed.imageUrl,
+      };
     } catch (error) {
       console.error('Error getting remembered account:', error);
       return null;

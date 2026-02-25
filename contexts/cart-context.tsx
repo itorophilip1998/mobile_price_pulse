@@ -29,9 +29,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const cartData = await cartAPI.getCart();
       setCart(cartData);
-    } catch (error) {
-      console.error('Error fetching cart:', error);
-      setCart(null);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 401 || status === 404) {
+        setCart(null);
+      } else {
+        console.error('Error fetching cart:', error);
+        setCart(null);
+      }
     } finally {
       setLoading(false);
     }

@@ -117,7 +117,7 @@ export default function VerifyEmailScreen() {
         
         // Small delay for toast to show, then navigate
         setTimeout(() => {
-          router.replace('/');
+          router.replace('/marketplace');
         }, 500);
       } else {
         showToast('Email verified successfully!', 'success');
@@ -223,9 +223,9 @@ export default function VerifyEmailScreen() {
           <View style={styles.iconContainer}>
             <Text style={styles.iconText}>✉️</Text>
           </View>
-          <Text style={styles.title}>Verify Your Email</Text>
+          <Text style={styles.title}>Verify your email</Text>
           <Text style={styles.subtitle}>
-            We've sent a 6-digit verification code to your email address. Please enter it below to verify your account.
+            Enter the 6-digit code we sent to your email to finish creating your account.
           </Text>
 
           {/* OTP Input Boxes */}
@@ -241,7 +241,7 @@ export default function VerifyEmailScreen() {
           {timeRemaining !== null && (
             <View style={styles.timerContainer}>
               {isExpired ? (
-                <Text style={styles.expiredText}>Verification code has expired</Text>
+                <Text style={styles.expiredText}>This code has expired</Text>
               ) : (
                 <>
                   <Text style={styles.timerLabel}>Code expires in:</Text>
@@ -267,13 +267,13 @@ export default function VerifyEmailScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.primaryButtonText}>
-                {isExpired ? 'Code Expired' : 'Verify Email'}
+                {isExpired ? 'Code expired' : 'Verify'}
               </Text>
             )}
           </TouchableOpacity>
 
           <View style={styles.helpContainer}>
-            <Text style={styles.helpText}>Didn't receive the code?</Text>
+            <Text style={styles.helpText}>Didn't get the code?</Text>
             <TouchableOpacity 
               onPress={handleResend} 
               disabled={isLoading || isResending || resendCooldown > 0}
@@ -287,14 +287,16 @@ export default function VerifyEmailScreen() {
             </TouchableOpacity>
           </View>
           {email && (
-            <Text style={styles.emailHint}>Code will be sent to: {email}</Text>
+            <Text style={styles.emailHint}>Sent to: {email}</Text>
           )}
 
           <TouchableOpacity
             onPress={() => router.replace('/auth')}
             style={styles.secondaryButton}
           >
-            <Text style={styles.secondaryButtonText}>Back to Sign In</Text>
+            <Text style={styles.secondaryButtonText}>
+              Back to <Text style={styles.secondaryButtonLink}>Sign In</Text>
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -323,7 +325,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   backButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#667eea',
     fontWeight: '600',
   },
@@ -337,62 +339,63 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   iconText: {
-    fontSize: 80,
+    fontSize: 64,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 16,
+    marginTop: 16,
+    marginBottom: 12,
     textAlign: 'center',
     letterSpacing: -0.5,
     paddingHorizontal: 8,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#6B7280',
-    marginBottom: 40,
+    marginBottom: 32,
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 22,
     paddingHorizontal: 8,
   },
   timerContainer: {
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 32,
+    marginTop: 20,
+    marginBottom: 24,
     paddingVertical: 16,
     paddingHorizontal: 16,
     backgroundColor: '#F9FAFB',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#9CA3AF',
+    borderColor: '#D1D5DB',
     width: '100%',
     maxWidth: '100%',
   },
   timerLabel: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6B7280',
     marginBottom: 4,
     textAlign: 'center',
   },
   timerText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#667eea',
     letterSpacing: 0.5,
     textAlign: 'center',
   },
   expiredText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#EF4444',
     textAlign: 'center',
   },
   primaryButton: {
-    borderRadius: 20,
-    paddingVertical: 24,
+    borderRadius: 16,
+    paddingVertical: 18,
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
     overflow: 'hidden',
     shadowColor: '#667eea',
     shadowOffset: { width: 0, height: 4 },
@@ -405,7 +408,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
@@ -413,15 +416,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   helpText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#6B7280',
     marginRight: 4,
   },
   resendLink: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#667eea',
     fontWeight: '600',
   },
@@ -429,17 +432,21 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   secondaryButton: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
     paddingHorizontal: 8,
   },
   secondaryButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#6B7280',
     fontWeight: '600',
   },
+  secondaryButtonLink: {
+    color: '#667eea',
+    fontWeight: '700',
+  },
   emailHint: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#9CA3AF',
     textAlign: 'center',
     marginTop: 8,

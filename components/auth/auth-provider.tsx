@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { router } from 'expo-router';
-import { mobileAuthAPI } from '@/lib/auth/api';
-import { tokenStorage } from '@/lib/auth/storage';
+import { useAuth as useClerkAuth } from '@clerk/clerk-expo';
+import { profileAPI } from '@/lib/api/profile';
 import { AuthContextType, User } from '@/lib/auth/types';
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -11,105 +11,70 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const { isLoaded, isSignedIn, signOut: clerkSignOut } = useClerkAuth();
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [userLoading, setUserLoading] = useState(false);
 
   useEffect(() => {
-    const initAuth = async () => {
-      const storedUser = await tokenStorage.getUser();
-      const accessToken = await tokenStorage.getAccessToken();
-
-      if (storedUser && accessToken) {
-        setUser(storedUser);
-        try {
-          const currentUser = await mobileAuthAPI.getCurrentUser();
-          setUser(currentUser);
-          await tokenStorage.setUser(currentUser);
-        } catch (error) {
-          await tokenStorage.clearTokens();
-          setUser(null);
-        }
-      }
-      setIsLoading(false);
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setUser(null);
+      return;
+    }
+    let cancelled = false;
+    setUserLoading(true);
+    profileAPI
+      .getCurrentUser()
+      .then((u) => {
+        if (!cancelled) setUser(u);
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setUserLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-
-    initAuth();
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   const signup = useCallback(
-    async (data: { email: string; password: string; firstName: string; lastName: string }) => {
-      try {
-        const result = await mobileAuthAPI.signup(data);
-        // Don't navigate automatically - let the UI handle it
-        return result;
-      } catch (error: any) {
-        throw error; // Re-throw to let the UI handle the error message
-      }
+    async (_data: {
+      email: string;
+      password: string;
+      firstName: string;
+      lastName: string;
+    }) => {
+      router.push('/auth');
     },
     [],
   );
 
-  const signin = useCallback(async (email: string, password: string) => {
-    try {
-      const response = await mobileAuthAPI.signin(email, password);
-      
-      // Validate response structure
-      if (!response.accessToken) {
-        throw new Error('Sign in response missing access token');
-      }
-      if (!response.refreshToken) {
-        throw new Error('Sign in response missing refresh token');
-      }
-      if (!response.user) {
-        throw new Error('Sign in response missing user data');
-      }
-      
-      // Store tokens and user
-      await tokenStorage.setTokens(response.accessToken, response.refreshToken);
-      await tokenStorage.setUser(response.user);
-      setUser(response.user);
-      router.replace('/');
-    } catch (error: any) {
-      // Extract error message - the API layer should already have formatted it
-      const errorMessage = error?.message || 
-                          error?.response?.data?.message || 
-                          error?.response?.data?.error || 
-                          'Failed to sign in. Please try again.';
-      throw new Error(errorMessage);
-    }
+  const signin = useCallback(async (_email: string, _password: string) => {
+    router.push('/auth');
   }, []);
 
   const signout = useCallback(async () => {
-    try {
-      const refreshToken = await tokenStorage.getRefreshToken();
-      if (refreshToken) {
-        await mobileAuthAPI.logout(refreshToken);
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      await tokenStorage.clearTokens();
-      setUser(null);
-      router.push('/auth');
-    }
-  }, []);
+    await clerkSignOut();
+    setUser(null);
+    router.push('/auth');
+  }, [clerkSignOut]);
 
   const refreshUser = useCallback(async () => {
-    try {
-      const currentUser = await mobileAuthAPI.getCurrentUser();
-      setUser(currentUser);
-      await tokenStorage.setUser(currentUser);
-      return currentUser;
-    } catch (error) {
-      console.error('Error refreshing user:', error);
-      throw error;
-    }
-  }, []);
+    if (!isSignedIn) return null;
+    const u = await profileAPI.getCurrentUser();
+    setUser(u);
+    return u;
+  }, [isSignedIn]);
+
+  const isLoading = !isLoaded || (isSignedIn && userLoading);
+  const isAuthenticated = isSignedIn && !!user;
 
   const value: AuthContextType = {
-    user,
+    user: isSignedIn ? user : null,
     isLoading,
-    isAuthenticated: !!user,
+    isAuthenticated,
     signup,
     signin,
     signout,
@@ -118,4 +83,3 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/hooks/use-auth';
@@ -8,13 +8,20 @@ interface ProtectedScreenProps {
 }
 
 export function ProtectedScreen({ children }: ProtectedScreenProps) {
-  const { user, isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated } = useAuth();
+  const [canNavigate, setCanNavigate] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    const t = setTimeout(() => setCanNavigate(true), 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (!canNavigate || isLoading) return;
+    if (!isAuthenticated) {
       router.replace('/auth');
     }
-  }, [isLoading, isAuthenticated]);
+  }, [canNavigate, isLoading, isAuthenticated]);
 
   if (isLoading) {
     return (

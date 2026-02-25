@@ -1,24 +1,19 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { tokenStorage } from '../auth/storage';
-import { setupRefreshTokenInterceptor } from './interceptors';
+import { getClerkToken } from '../clerk-token';
 
 const client = axios.create({
   baseURL: `${API_CONFIG.BASE_URL}/products`,
   timeout: API_CONFIG.TIMEOUT,
 });
 
-// Add auth token to requests
 client.interceptors.request.use(async (config) => {
-  const token = await tokenStorage.getAccessToken();
+  const token = await getClerkToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
-
-// Setup refresh token interceptor
-setupRefreshTokenInterceptor(client);
 
 export interface Product {
   id: string;

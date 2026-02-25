@@ -11,9 +11,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { mobileAuthAPI } from '@/lib/auth/api';
 import { router, useLocalSearchParams } from 'expo-router';
+import { PasswordStrengthIndicator } from '@/components/auth/password-strength';
 
 export default function ResetPasswordScreen() {
   const params = useLocalSearchParams();
@@ -83,9 +85,9 @@ export default function ResetPasswordScreen() {
         </View>
 
         <View style={styles.formContainer}>
-          <Text style={styles.title}>Create New Password</Text>
+          <Text style={styles.title}>Create new password</Text>
           <Text style={styles.subtitle}>
-            Enter your new password below. Make sure it's at least 8 characters long.
+            Enter and confirm your new password (at least 8 characters).
           </Text>
 
           <View style={styles.inputWrapper}>
@@ -116,10 +118,18 @@ export default function ResetPasswordScreen() {
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
               style={styles.eyeButton}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Text style={styles.eyeButtonText}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={22}
+                color="#6B7280"
+              />
             </TouchableOpacity>
           </View>
+          {(passwordFocused || hasPasswordValue) && (
+            <PasswordStrengthIndicator password={password} />
+          )}
 
           <View style={styles.inputWrapper}>
             <TextInput
@@ -149,8 +159,13 @@ export default function ResetPasswordScreen() {
             <TouchableOpacity
               onPress={() => setShowConfirmPassword(!showConfirmPassword)}
               style={styles.eyeButton}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Text style={styles.eyeButtonText}>{showConfirmPassword ? '👁️' : '👁️‍🗨️'}</Text>
+              <Ionicons
+                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={22}
+                color="#6B7280"
+              />
             </TouchableOpacity>
           </View>
 
@@ -214,34 +229,35 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   title: {
-    fontSize: 36,
+    fontSize: 28,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 20,
+    marginTop: 16,
+    marginBottom: 12,
     letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 17,
+    fontSize: 15,
     color: '#6B7280',
-    marginBottom: 56,
-    lineHeight: 26,
+    marginBottom: 32,
+    lineHeight: 22,
   },
   inputWrapper: {
-    marginBottom: 40,
+    marginBottom: 16,
     position: 'relative',
   },
   input: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#9CA3AF',
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    paddingBottom: 16,
-    paddingRight: 70,
-    fontSize: 18,
+    borderColor: '#D1D5DB',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 12,
+    paddingRight: 56,
+    fontSize: 16,
     color: '#111827',
-    height: 80,
+    height: 64,
   },
   inputFocused: {
     borderColor: '#667eea',
@@ -249,9 +265,9 @@ const styles = StyleSheet.create({
   },
   floatingLabel: {
     position: 'absolute',
-    left: 24,
-    top: 28,
-    fontSize: 18,
+    left: 20,
+    top: 22,
+    fontSize: 15,
     color: '#9CA3AF',
     pointerEvents: 'none',
     backgroundColor: '#FFFFFF',
@@ -262,8 +278,8 @@ const styles = StyleSheet.create({
     color: '#667eea',
   },
   floatingLabelActive: {
-    top: 8,
-    fontSize: 12,
+    top: 6,
+    fontSize: 11,
     fontWeight: '600',
   },
   floatingLabelInactive: {
@@ -271,16 +287,13 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     position: 'absolute',
-    right: 24,
-    top: 28,
-    padding: 10,
-  },
-  eyeButtonText: {
-    fontSize: 20,
+    right: 16,
+    top: 20,
+    padding: 8,
   },
   primaryButton: {
-    borderRadius: 20,
-    paddingVertical: 24,
+    borderRadius: 16,
+    paddingVertical: 18,
     alignItems: 'center',
     marginTop: 24,
     marginBottom: 32,
@@ -296,16 +309,16 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   secondaryButton: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#6B7280',
     fontWeight: '600',
   },

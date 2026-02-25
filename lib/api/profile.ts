@@ -1,24 +1,19 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { tokenStorage } from '../auth/storage';
-import { setupRefreshTokenInterceptor } from './interceptors';
+import { getClerkToken } from '../clerk-token';
 
 const client = axios.create({
   baseURL: `${API_CONFIG.BASE_URL}/auth`,
   timeout: API_CONFIG.TIMEOUT,
 });
 
-// Add auth token to requests
 client.interceptors.request.use(async (config) => {
-  const token = await tokenStorage.getAccessToken();
+  const token = await getClerkToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
-
-// Setup refresh token interceptor
-setupRefreshTokenInterceptor(client);
 
 export interface Profile {
   id: string;
@@ -36,6 +31,14 @@ export interface Profile {
   deliveryLocation?: string;
 }
 
+export interface User {
+  id: string;
+  email: string;
+  role: 'USER' | 'ADMIN';
+  isVerified: boolean;
+  profile?: Profile;
+}
+
 export interface UpdateProfileData {
   firstName?: string;
   lastName?: string;
@@ -50,6 +53,10 @@ export interface UpdateProfileData {
 }
 
 export const profileAPI = {
+  async getCurrentUser(): Promise<User> {
+    const response = await client.get('/me');
+    return response.data;
+  },
   async updateProfile(data: UpdateProfileData): Promise<{ message: string; profile: Profile }> {
     const response = await client.post('/profile', data);
     return response.data;

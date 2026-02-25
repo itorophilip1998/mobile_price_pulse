@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Rosie",
+    "name": "PricePulse",
     "slug": "pricepulse-ai",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -17,7 +17,7 @@
       "package": "com.pricepulse.ai",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#667eea",
+        "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/images/applogo.png",
         "backgroundImage": "./assets/images/applogo.png",
         "monochromeImage": "./assets/images/applogo.png"
@@ -37,9 +37,9 @@
           "image": "./assets/images/applogo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#667eea",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#667eea"
           }
         }
       ],

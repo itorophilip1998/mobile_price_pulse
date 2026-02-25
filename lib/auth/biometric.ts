@@ -1,5 +1,4 @@
 import * as LocalAuthentication from 'expo-local-authentication';
-import { tokenStorage } from './storage';
 
 export const biometricAuth = {
   isAvailable: async (): Promise<boolean> => {

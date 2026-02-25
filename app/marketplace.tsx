@@ -10,6 +10,7 @@ import {
   Modal,
   Dimensions,
 } from 'react-native';
+import { ScrollView } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,7 +24,11 @@ import { TipToast } from '@/components/ui/tip-toast';
 import { Ionicons } from '@expo/vector-icons';
 import { useProducts, useCategories } from '@/hooks/use-products';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useGlobalSearch } from '@/hooks/use-global-search';
 import { wishlistAPI } from '@/lib/api/wishlist';
+import { ProductCard } from '@/components/product-card';
+import { searchAPI, type GlobalSearchResponse } from '@/lib/api/search';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get('window');
 
@@ -46,6 +51,8 @@ function MarketplaceContent() {
   const [wishlistCount, setWishlistCount] = useState(0);
   const [loadingWishlist, setLoadingWishlist] = useState(true);
   const [tipToast, setTipToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [imageSearchResult, setImageSearchResult] = useState<GlobalSearchResponse | null>(null);
+  const [imageSearchLoading, setImageSearchLoading] = useState(false);
 
   // Load wishlist from API on mount
   useEffect(() => {
@@ -111,6 +118,67 @@ function MarketplaceContent() {
   const products = useMemo(() => {
     return productsData?.pages.flatMap((page) => page.products) || [];
   }, [productsData]);
+
+  // Global search (our products + suggested) when user has a search query
+  const {
+    data: globalSearchData,
+    isLoading: globalSearchLoading,
+  } = useGlobalSearch({
+    q: debouncedSearch || undefined,
+    category: selectedCategory || undefined,
+    sortBy,
+    sortOrder,
+    limit: 20,
+    page: 1,
+  });
+
+  const isGlobalSearchMode =
+    (!!debouncedSearch && debouncedSearch.length >= 1) || !!imageSearchResult;
+  const sourceData = imageSearchResult ?? globalSearchData;
+  const internalProducts = sourceData?.internal?.products ?? [];
+  const suggestedProducts = sourceData?.suggested?.products ?? [];
+  const suggestedSources = sourceData?.suggested?.sources ?? [];
+  const isFromImageSearch = !!imageSearchResult;
+
+  const handleSearchByImage = useCallback(async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      showToast('Gallery permission is required to search by image', 'error');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      base64: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setImageSearchLoading(true);
+    setImageSearchResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('image', {
+        uri: asset.uri,
+        name: 'image.jpg',
+        type: 'image/jpeg',
+      } as any);
+      const data = await searchAPI.searchByImage(formData);
+      setImageSearchResult(data);
+      setSearchQuery('');
+    } catch (e) {
+      showToast('Image search failed. Try again.', 'error');
+    } finally {
+      setImageSearchLoading(false);
+    }
+  }, [showToast]);
+
+  const handleVoiceSearch = useCallback(() => {
+    showToast('Voice search: speak your product name after tapping mic (coming soon)', 'info');
+  }, [showToast]);
+
+  const clearImageSearchResult = useCallback(() => {
+    setImageSearchResult(null);
+  }, []);
 
   // Handle load more
   const handleLoadMore = useCallback(() => {
@@ -370,16 +438,41 @@ function MarketplaceContent() {
           <Ionicons name="search" size={20} color="#6B7280" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search for products..."
+            placeholder="Search products worldwide..."
             placeholderTextColor="#9CA3AF"
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={(text) => {
+              clearImageSearchResult();
+              setSearchQuery(text);
+            }}
             multiline={false}
             numberOfLines={1}
             clearButtonMode="while-editing"
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+          <TouchableOpacity
+            style={styles.searchActionButton}
+            onPress={handleVoiceSearch}
+          >
+            <Ionicons name="mic-outline" size={22} color="#667eea" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.searchActionButton}
+            onPress={handleSearchByImage}
+            disabled={imageSearchLoading}
+          >
+            {imageSearchLoading ? (
+              <ActivityIndicator size="small" color="#667eea" />
+            ) : (
+              <Ionicons name="image-outline" size={22} color="#667eea" />
+            )}
+          </TouchableOpacity>
+          {(searchQuery.length > 0 || imageSearchResult) && (
+            <TouchableOpacity
+              onPress={() => {
+                setSearchQuery('');
+                clearImageSearchResult();
+              }}
+            >
               <Ionicons name="close-circle" size={20} color="#6B7280" />
             </TouchableOpacity>
           )}
@@ -542,8 +635,89 @@ function MarketplaceContent() {
         </TouchableOpacity>
       </View>
 
-      {/* Products Grid */}
-      {loading ? (
+      {/* Products Grid or Global Search (Our products + Suggested) */}
+      {isGlobalSearchMode ? (
+        (globalSearchLoading && !imageSearchResult) || imageSearchLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#667eea" />
+            <Text style={styles.loadingText}>Searching...</Text>
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.globalSearchScroll}
+            contentContainerStyle={styles.globalSearchContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Our products first */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>
+                {isFromImageSearch ? 'Search results from your image' : 'Our products'}
+              </Text>
+            </View>
+            {internalProducts.length === 0 ? (
+              <>
+                <Text style={styles.sectionEmpty}>No matching products in our store</Text>
+                {suggestedProducts.length > 0 && (
+                  <Text style={styles.similarLabel}>Similar products you can find elsewhere:</Text>
+                )}
+              </>
+            ) : (
+              <View style={styles.productsGrid}>
+                {internalProducts.map((item) => (
+                  <ProductCard
+                    key={item.id}
+                    type="internal"
+                    product={item}
+                    isInCart={isInCart(item.id)}
+                    isWishlisted={wishlist.has(item.id)}
+                    onPress={() => handleProductPress(item)}
+                    onAddToCart={handleAddToCart}
+                    onToggleWishlist={toggleWishlist}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Suggested (external) */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Suggested</Text>
+              {suggestedSources.length > 0 && (
+                <Text style={styles.sectionSubtitle}>From: {suggestedSources.join(', ')}</Text>
+              )}
+            </View>
+            {suggestedProducts.length === 0 ? (
+              <Text style={styles.sectionEmpty}>
+                External suggestions (e.g. Jumia, eBay) will appear here when available.
+              </Text>
+            ) : (
+              <>
+                <View style={styles.productsGrid}>
+                  {suggestedProducts.slice(0, 6).map((item) => (
+                    <ProductCard
+                      key={`${item.sourceId}-${item.id}`}
+                      type="suggested"
+                      product={item}
+                      onPress={() => {}}
+                    />
+                  ))}
+                </View>
+                <TouchableOpacity
+                  style={styles.viewFullSuggestedButton}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/search/suggested',
+                      params: { q: debouncedSearch || (isFromImageSearch ? 'from image' : '') },
+                    })
+                  }
+                >
+                  <Text style={styles.viewFullSuggestedText}>View full suggested page</Text>
+                  <Ionicons name="open-outline" size={18} color="#667eea" />
+                </TouchableOpacity>
+              </>
+            )}
+          </ScrollView>
+        )
+      ) : loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#667eea" />
           <Text style={styles.loadingText}>Loading products...</Text>
@@ -841,6 +1015,13 @@ const styles = StyleSheet.create({
     minHeight: 20,
     maxHeight: 44,
   },
+  searchActionButton: {
+    padding: 8,
+    marginLeft: 4,
+    minWidth: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   menuOverlay: {
     position: 'absolute',
     top: 0,
@@ -942,6 +1123,61 @@ const styles = StyleSheet.create({
   },
   productsGrid: {
     padding: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  globalSearchScroll: {
+    flex: 1,
+  },
+  globalSearchContent: {
+    paddingBottom: 32,
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  sectionEmpty: {
+    fontSize: 14,
+    color: '#6B7280',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  similarLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  viewFullSuggestedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#667eea',
+  },
+  viewFullSuggestedText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#667eea',
   },
   productCard: {
     width: (width - 32) / 2,

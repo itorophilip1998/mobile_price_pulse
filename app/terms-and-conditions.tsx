@@ -28,16 +28,16 @@ function TermsAndConditionsContent() {
 
           <Text style={styles.sectionTitle}>1. Acceptance of Terms</Text>
           <Text style={styles.paragraph}>
-            By accessing and using Rosie, you accept and agree to be bound by the terms and provision of this agreement.
+            By accessing and using PricePulse, you accept and agree to be bound by the terms and provision of this agreement.
           </Text>
 
           <Text style={styles.sectionTitle}>2. Use License</Text>
           <Text style={styles.paragraph}>
-            Permission is granted to temporarily download one copy of Rosie for personal, non-commercial transitory viewing only. This is the grant of a license, not a transfer of title, and under this license you may not:
+            Permission is granted to temporarily download one copy of PricePulse for personal, non-commercial transitory viewing only. This is the grant of a license, not a transfer of title, and under this license you may not:
           </Text>
           <Text style={styles.bulletPoint}>• Modify or copy the materials</Text>
           <Text style={styles.bulletPoint}>• Use the materials for any commercial purpose or for any public display</Text>
-          <Text style={styles.bulletPoint}>• Attempt to decompile or reverse engineer any software contained in Rosie</Text>
+          <Text style={styles.bulletPoint}>• Attempt to decompile or reverse engineer any software contained in PricePulse</Text>
           <Text style={styles.bulletPoint}>• Remove any copyright or other proprietary notations from the materials</Text>
 
           <Text style={styles.sectionTitle}>3. User Accounts</Text>
@@ -52,27 +52,27 @@ function TermsAndConditionsContent() {
 
           <Text style={styles.sectionTitle}>5. Privacy Policy</Text>
           <Text style={styles.paragraph}>
-            Your use of Rosie is also governed by our Privacy Policy. Please review our Privacy Policy to understand our practices.
+            Your use of PricePulse is also governed by our Privacy Policy. Please review our Privacy Policy to understand our practices.
           </Text>
 
           <Text style={styles.sectionTitle}>6. Limitation of Liability</Text>
           <Text style={styles.paragraph}>
-            In no event shall Rosie or its suppliers be liable for any damages (including, without limitation, damages for loss of data or profit, or due to business interruption) arising out of the use or inability to use Rosie, even if Rosie or a Rosie authorized representative has been notified orally or in writing of the possibility of such damage.
+            In no event shall PricePulse or its suppliers be liable for any damages (including, without limitation, damages for loss of data or profit, or due to business interruption) arising out of the use or inability to use PricePulse, even if PricePulse or a PricePulse authorized representative has been notified orally or in writing of the possibility of such damage.
           </Text>
 
           <Text style={styles.sectionTitle}>7. Revisions and Errata</Text>
           <Text style={styles.paragraph}>
-            The materials appearing on Rosie could include technical, typographical, or photographic errors. Rosie does not warrant that any of the materials on its app are accurate, complete, or current. Rosie may make changes to the materials contained on its app at any time without notice.
+            The materials appearing on PricePulse could include technical, typographical, or photographic errors. PricePulse does not warrant that any of the materials on its app are accurate, complete, or current. PricePulse may make changes to the materials contained on its app at any time without notice.
           </Text>
 
           <Text style={styles.sectionTitle}>8. Links</Text>
           <Text style={styles.paragraph}>
-            Rosie has not reviewed all of the sites linked to its app and is not responsible for the contents of any such linked site. The inclusion of any link does not imply endorsement by Rosie of the site. Use of any such linked website is at the user's own risk.
+            PricePulse has not reviewed all of the sites linked to its app and is not responsible for the contents of any such linked site. The inclusion of any link does not imply endorsement by PricePulse of the site. Use of any such linked website is at the user's own risk.
           </Text>
 
           <Text style={styles.sectionTitle}>9. Modifications</Text>
           <Text style={styles.paragraph}>
-            Rosie may revise these terms of service for its app at any time without notice. By using this app you are agreeing to be bound by the then current version of these terms of service.
+            PricePulse may revise these terms of service for its app at any time without notice. By using this app you are agreeing to be bound by the then current version of these terms of service.
           </Text>
 
           <Text style={styles.sectionTitle}>10. Governing Law</Text>
@@ -87,7 +87,7 @@ function TermsAndConditionsContent() {
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>
-              By using Rosie, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.
+              By using PricePulse, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.
             </Text>
           </View>
         </View>

@@ -7,8 +7,6 @@ let failedQueue: Array<{
   resolve: (value?: any) => void;
   reject: (error?: any) => void;
 }> = [];
-let hasWarnedNoToken = false;
-
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
@@ -57,17 +55,11 @@ export const setupRefreshTokenInterceptor = (client: any) => {
         try {
           const refreshToken = await tokenStorage.getRefreshToken();
           if (!refreshToken) {
-            // Only log once per session, not for every request
-            if (!hasWarnedNoToken && failedQueue.length === 0) {
-              hasWarnedNoToken = true;
-              // Silently handle - this is expected when user is not logged in
-            }
             await tokenStorage.clearTokens();
-            processQueue(new Error('No refresh token available'));
+            // Reject queue with original error (no custom message) to avoid console warnings
+            processQueue(error, null);
             return Promise.reject(error);
           }
-          // Reset warning flag if we successfully got a refresh token
-          hasWarnedNoToken = false;
 
           const response = await axios.post(
             `${API_CONFIG.BASE_URL}${API_CONFIG.AUTH_ENDPOINT}/refresh-token`,
