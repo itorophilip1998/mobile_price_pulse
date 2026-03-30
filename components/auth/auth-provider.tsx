@@ -69,7 +69,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [isSignedIn]);
 
   const isLoading = !isLoaded || (isSignedIn && userLoading);
-  const isAuthenticated = isSignedIn && !!user;
+  // Treat Clerk sign-in as authenticated so we don't show a blank screen when
+  // the backend profile isn't ready yet (e.g. right after sign-up).
+  const isAuthenticated = isSignedIn;
 
   const value: AuthContextType = {
     user: isSignedIn ? user : null,

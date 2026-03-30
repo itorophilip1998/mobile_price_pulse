@@ -22,7 +22,7 @@ import { wishlistAPI, WishlistItem } from '@/lib/api/wishlist';
 const { width } = Dimensions.get('window');
 
 function WishlistContent() {
-  const { addToCart } = useCart();
+  const { addToCart, busyProductIds } = useCart();
   const { showToast } = useToast();
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +82,7 @@ function WishlistContent() {
         await addToCart(product.id, 1);
         showToast(`${product.name} added to cart`, 'success');
       } catch (error) {
-        showToast('Failed to add to cart', 'error');
+        showToast(error instanceof Error ? error.message : 'Failed to add to cart', 'error');
       }
     },
     [addToCart, showToast],
@@ -154,24 +154,34 @@ function WishlistContent() {
             
             {/* Add to Cart Button */}
             <TouchableOpacity
-              style={styles.addToCartButton}
+              style={[
+                styles.addToCartButton,
+                busyProductIds.has(product.id) && styles.addToCartButtonBusy,
+              ]}
               onPress={() => handleAddToCart(product)}
               activeOpacity={0.8}
+              disabled={busyProductIds.has(product.id)}
             >
-              <LinearGradient
-                colors={['#667eea', '#764ba2']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-              <Ionicons name="cart" size={18} color="#FFFFFF" style={styles.cartIcon} />
-              <Text style={styles.addToCartText}>Add to Cart</Text>
+              {busyProductIds.has(product.id) ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <LinearGradient
+                    colors={['#667eea', '#764ba2']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  <Ionicons name="cart" size={18} color="#FFFFFF" style={styles.cartIcon} />
+                  <Text style={styles.addToCartText}>Add to Cart</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       );
     },
-    [handleAddToCart, removeFromWishlist, handleProductPress],
+    [handleAddToCart, removeFromWishlist, handleProductPress, busyProductIds],
   );
 
   return (
@@ -328,19 +338,9 @@ const styles = StyleSheet.create({
   },
   wishlistButton: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    top: 8,
+    right: 8,
+    padding: 6,
     zIndex: 2,
   },
   productInfo: {
@@ -406,6 +406,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
+  },
+  addToCartButtonBusy: {
+    opacity: 0.7,
+    backgroundColor: '#667eea',
   },
   cartIcon: {
     marginRight: 6,

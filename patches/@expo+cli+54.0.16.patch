@@ -1,0 +1,55 @@
+diff --git a/node_modules/@expo/cli/build/src/start/platforms/ios/AppleDeviceManager.js b/node_modules/@expo/cli/build/src/start/platforms/ios/AppleDeviceManager.js
+index 725db8a..cae4ae6 100644
+--- a/node_modules/@expo/cli/build/src/start/platforms/ios/AppleDeviceManager.js
++++ b/node_modules/@expo/cli/build/src/start/platforms/ios/AppleDeviceManager.js
+@@ -249,22 +249,36 @@ class AppleDeviceManager extends _DeviceManager.DeviceManager {
+         })) {
+             return await this.launchApplicationIdAsync(url);
+         }
+-        try {
+-            await _simctl.openUrlAsync(this.device, {
+-                url,
+-                appId: options.appId
+-            });
+-        } catch (error) {
+-            // 194 means the device does not conform to a given URL, in this case we'll assume that the desired app is not installed.
+-            if (error.status === 194) {
+-                // An error was encountered processing the command (domain=NSOSStatusErrorDomain, code=-10814):
+-                // The operation couldn’t be completed. (OSStatus error -10814.)
+-                //
+-                // This can be thrown when no app conforms to the URI scheme that we attempted to open.
+-                throw new _errors.CommandError('APP_NOT_INSTALLED', `Device ${this.device.name} (${this.device.udid}) has no app to handle the URI: ${url}`);
++        const maxAttempts = 4;
++        let lastError;
++        for(let attempt = 1; attempt <= maxAttempts; attempt++){
++            try {
++                await _simctl.openUrlAsync(this.device, {
++                    url,
++                    appId: options.appId
++                });
++                return;
++            } catch (error) {
++                lastError = error;
++                // 194 means the device does not conform to a given URL, in this case we'll assume that the desired app is not installed.
++                if (error.status === 194) {
++                    // An error was encountered processing the command (domain=NSOSStatusErrorDomain, code=-10814):
++                    // The operation couldn’t be completed. (OSStatus error -10814.)
++                    //
++                    // This can be thrown when no app conforms to the URI scheme that we attempted to open.
++                    throw new _errors.CommandError('APP_NOT_INSTALLED', `Device ${this.device.name} (${this.device.udid}) has no app to handle the URI: ${url}`);
++                }
++                const msg = `${error.stderr ?? ''}${error.message ?? ''}`;
++                const isOpenUrlTimeout = error.status === 60 || msg.includes('code=60') || msg.includes('timed out');
++                if (isOpenUrlTimeout && attempt < maxAttempts) {
++                    await (0, _delay.delayAsync)(1500);
++                    await this.activateWindowAsync();
++                    continue;
++                }
++                throw error;
+             }
+-            throw error;
+         }
++        throw lastError;
+     }
+     async activateWindowAsync() {
+         await (0, _ensureSimulatorAppRunning.ensureSimulatorAppRunningAsync)(this.device);

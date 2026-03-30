@@ -6,6 +6,15 @@ const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_KEY = 'user';
 const REMEMBER_ME_KEY = 'remember_me_account';
 
+const safeParseJson = <T>(value: string | null): T | null => {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+};
+
 export const tokenStorage = {
   getAccessToken: async (): Promise<string | null> => {
     try {
@@ -61,7 +70,12 @@ export const tokenStorage = {
   getUser: async (): Promise<any> => {
     try {
       const userStr = await AsyncStorage.getItem(USER_KEY);
-      return userStr ? JSON.parse(userStr) : null;
+      const parsedUser = safeParseJson<any>(userStr);
+      if (!parsedUser && userStr) {
+        // Corrupted persisted value can happen after interrupted writes; clear it.
+        await AsyncStorage.removeItem(USER_KEY);
+      }
+      return parsedUser;
     } catch (error) {
       console.error('Error getting user:', error);
       return null;
@@ -97,7 +111,11 @@ export const tokenStorage = {
     try {
       const accountStr = await AsyncStorage.getItem(REMEMBER_ME_KEY);
       if (!accountStr) return null;
-      const parsed = JSON.parse(accountStr) as { email?: string; username?: string; imageUrl?: string };
+      const parsed = safeParseJson<{ email?: string; username?: string; imageUrl?: string }>(accountStr);
+      if (!parsed) {
+        await AsyncStorage.removeItem(REMEMBER_ME_KEY);
+        return null;
+      }
       if (!parsed?.email) return null;
       return {
         email: parsed.email,

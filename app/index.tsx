@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { ProtectedScreen } from '@/components/auth/protected-screen';
 import { onboardingStorage } from '@/lib/onboarding-storage';
 
@@ -21,10 +22,14 @@ export default function IndexScreen() {
 
   useEffect(() => {
     let cancelled = false;
+    // Safety: hide native splash after 3s so we never stay on a black screen if storage hangs
+    const safetyHide = setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 3000);
     (async () => {
       try {
         const completed = await onboardingStorage.getHasCompletedOnboarding();
         if (cancelled) return;
+        // Hide native splash so our UI is visible (we only reach /splash when onboarding not completed)
+        SplashScreen.hideAsync().catch(() => {});
         if (completed) {
           setGateState('app');
         } else {
@@ -32,11 +37,15 @@ export default function IndexScreen() {
           router.replace('/splash');
         }
       } catch {
-        if (!cancelled) setGateState('app');
+        if (!cancelled) {
+          SplashScreen.hideAsync().catch(() => {});
+          setGateState('app');
+        }
       }
     })();
     return () => {
       cancelled = true;
+      clearTimeout(safetyHide);
     };
   }, []);
 

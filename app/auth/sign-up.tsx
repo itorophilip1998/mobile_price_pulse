@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { OTPInput } from '@/components/auth/otp-input';
 import { PasswordStrengthIndicator } from '@/components/auth/password-strength';
 import { GoogleLogo } from '@/components/google-logo';
+import { profileAPI } from '@/lib/api/profile';
 
 export default function SignUpScreen() {
   const { isSignedIn } = useAuth();
@@ -77,30 +78,25 @@ export default function SignUpScreen() {
 
     setIsLoading(true);
     try {
-      await signUp.create({
+      const result = await signUp.create({
         emailAddress: email.trim(),
         password,
       });
-      if (signUp.status === 'complete' && signUp.createdSessionId) {
-        await setActive({ session: signUp.createdSessionId });
+
+      if (result.status === 'complete' && result.createdSessionId) {
+        await setActive({ session: result.createdSessionId });
+        await saveUsernameToProfile();
         router.replace('/marketplace');
         return;
       }
-      // Require email verification with OTP here in the app
-      const unverified = signUp.unverifiedFields as string[] | undefined;
-      const needsEmailVerification =
-        unverified?.includes('email_address') || unverified?.includes('emailAddress');
-      if (needsEmailVerification || signUp.status !== 'complete') {
-        try {
-          await signUp.prepareEmailAddressVerification({
-            strategy: 'email_code',
-          });
-        } catch (prepareErr) {
-          // If already prepared or other error, still show verify step
-        }
-        setStep('verify');
-        setOtpKey((k) => k + 1);
+
+      try {
+        await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      } catch {
+        // Already prepared or not needed — still show verify step
       }
+      setStep('verify');
+      setOtpKey((k) => k + 1);
     } catch (err: unknown) {
       const message =
         err && typeof err === 'object' && 'errors' in err
@@ -138,6 +134,19 @@ export default function SignUpScreen() {
     }
   };
 
+  const saveUsernameToProfile = async () => {
+    if (!username.trim()) return;
+    try {
+      const names = username.trim().split(/\s+/);
+      await profileAPI.updateProfile({
+        firstName: names[0] || username.trim(),
+        lastName: names.slice(1).join(' ') || undefined,
+      });
+    } catch {
+      // best-effort — user is already signed up
+    }
+  };
+
   const handleVerifyCode = async (code: string) => {
     if (!isLoaded || !signUp) return;
     if (!code || code.length !== 6) {
@@ -146,9 +155,10 @@ export default function SignUpScreen() {
     }
     setIsLoading(true);
     try {
-      await signUp.attemptEmailAddressVerification({ code });
-      if (signUp.status === 'complete' && signUp.createdSessionId) {
-        await setActive({ session: signUp.createdSessionId });
+      const result = await signUp.attemptEmailAddressVerification({ code });
+      if (result.status === 'complete' && result.createdSessionId) {
+        await setActive({ session: result.createdSessionId });
+        await saveUsernameToProfile();
         router.replace('/marketplace');
       } else {
         Alert.alert('Error', 'Verification could not be completed. Please try again.');

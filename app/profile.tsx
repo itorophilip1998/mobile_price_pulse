@@ -172,7 +172,7 @@ function ProfileContent() {
                 placeholderTextColor="#9CA3AF"
               />
             ) : (
-              <Text style={styles.value}>{firstName || 'Not set'}</Text>
+              <Text style={styles.value}>{firstName ?? 'N/A'}</Text>
             )}
           </View>
 
@@ -187,7 +187,7 @@ function ProfileContent() {
                 placeholderTextColor="#9CA3AF"
               />
             ) : (
-              <Text style={styles.value}>{lastName || 'Not set'}</Text>
+              <Text style={styles.value}>{lastName ?? 'N/A'}</Text>
             )}
           </View>
 
@@ -203,7 +203,7 @@ function ProfileContent() {
                 keyboardType="phone-pad"
               />
             ) : (
-              <Text style={styles.value}>{phone || 'Not set'}</Text>
+              <Text style={styles.value}>{phone ?? 'N/A'}</Text>
             )}
           </View>
 
@@ -220,7 +220,7 @@ function ProfileContent() {
                 numberOfLines={3}
               />
             ) : (
-              <Text style={styles.value}>{bio || 'Not set'}</Text>
+              <Text style={styles.value}>{bio ?? 'N/A'}</Text>
             )}
           </View>
         </View>
@@ -241,7 +241,7 @@ function ProfileContent() {
                 numberOfLines={2}
               />
             ) : (
-              <Text style={styles.value}>{address1 || 'Not set'}</Text>
+              <Text style={styles.value}>{address1 ?? 'N/A'}</Text>
             )}
           </View>
 
@@ -258,7 +258,7 @@ function ProfileContent() {
                 numberOfLines={2}
               />
             ) : (
-              <Text style={styles.value}>{address2 || 'Not set'}</Text>
+              <Text style={styles.value}>{address2 ?? 'N/A'}</Text>
             )}
           </View>
 
@@ -273,7 +273,7 @@ function ProfileContent() {
                 placeholderTextColor="#9CA3AF"
               />
             ) : (
-              <Text style={styles.value}>{state || 'Not set'}</Text>
+              <Text style={styles.value}>{state ?? 'N/A'}</Text>
             )}
           </View>
 
@@ -288,7 +288,7 @@ function ProfileContent() {
                 placeholderTextColor="#9CA3AF"
               />
             ) : (
-              <Text style={styles.value}>{localGovernment || 'Not set'}</Text>
+              <Text style={styles.value}>{localGovernment ?? 'N/A'}</Text>
             )}
           </View>
 
@@ -303,7 +303,7 @@ function ProfileContent() {
                 placeholderTextColor="#9CA3AF"
               />
             ) : (
-              <Text style={styles.value}>{country || 'Not set'}</Text>
+              <Text style={styles.value}>{country ?? 'N/A'}</Text>
             )}
           </View>
 
@@ -320,7 +320,7 @@ function ProfileContent() {
                 numberOfLines={2}
               />
             ) : (
-              <Text style={styles.value}>{deliveryLocation || 'Not set'}</Text>
+              <Text style={styles.value}>{deliveryLocation ?? 'N/A'}</Text>
             )}
           </View>
         </View>

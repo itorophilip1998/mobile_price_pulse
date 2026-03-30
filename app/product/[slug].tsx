@@ -25,12 +25,17 @@ import { useQuery } from '@tanstack/react-query';
 import { useProductReviews } from '@/hooks/use-reviews';
 import type { Review } from '@/lib/api/reviews';
 import { ImageCarouselModal } from '@/components/ui/image-carousel-modal';
+import {
+  formatProductCondition,
+  formatDeliveryMode,
+  formatDeliveryFulfillment,
+} from '@/lib/product-meta';
 
 const { width } = Dimensions.get('window');
 
 function ProductDetailContent() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const { cart, addToCart } = useCart();
+  const { cart, addToCart, busyProductIds } = useCart();
   const { showToast } = useToast();
   const { user } = useAuth();
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -38,9 +43,6 @@ function ProductDetailContent() {
   const [quantity, setQuantity] = useState(1);
   const [tipToast, setTipToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showImageCarousel, setShowImageCarousel] = useState(false);
-
-  // Check if product is in cart
-  const isInCart = product ? cart?.items.some((item) => item.product.id === product.id) || false : false;
 
   // Fetch product details
   const {
@@ -52,6 +54,10 @@ function ProductDetailContent() {
     queryFn: () => productsAPI.getProduct(slug!),
     enabled: !!slug,
   });
+
+  // Check if product is in cart (must be after useQuery so `product` is defined)
+  const isInCart = product ? cart?.items.some((item) => item.product.id === product.id) || false : false;
+  const isBusy = product ? busyProductIds.has(product.id) : false;
 
   // Fetch reviews
   const {
@@ -101,17 +107,23 @@ function ProductDetailContent() {
     }
   }, [product, isWishlisted, user, showToast]);
 
-  // Add to cart
+  // Add to cart or go to cart if already there
   const handleAddToCart = useCallback(async () => {
     if (!product) return;
+
+    if (isInCart) {
+      router.push('/cart');
+      return;
+    }
 
     try {
       await addToCart(product.id, quantity);
       setTipToast({ message: 'Added to cart', type: 'success' });
-    } catch (error: any) {
-      setTipToast({ message: error?.response?.data?.message || 'Failed to add to cart', type: 'error' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to add to cart';
+      setTipToast({ message, type: 'error' });
     }
-  }, [product, quantity, addToCart]);
+  }, [product, quantity, addToCart, isInCart]);
 
   // Update quantity
   const updateQuantity = useCallback((delta: number) => {
@@ -153,6 +165,9 @@ function ProductDetailContent() {
       : ['https://via.placeholder.com/400x400?text=No+Image'];
 
   const hasDiscount = product.discount && product.discount > 0;
+  const conditionLabel = formatProductCondition(product.condition);
+  const fulfillmentLabel = formatDeliveryFulfillment(product.deliveryFulfillment);
+  const deliveryLabel = formatDeliveryMode(product.deliveryMode);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -236,6 +251,41 @@ function ProductDetailContent() {
         <View style={styles.productInfo}>
           <Text style={styles.productName}>{product.name}</Text>
           <Text style={styles.vendor}>by {product.vendor}</Text>
+
+          {(conditionLabel || fulfillmentLabel || deliveryLabel || product.deliveryNotes) ? (
+            <View style={styles.metaChips}>
+              {conditionLabel ? (
+                <View style={styles.metaChip}>
+                  <Text style={styles.metaChipText}>{conditionLabel}</Text>
+                </View>
+              ) : null}
+              {fulfillmentLabel ? (
+                <View style={[styles.metaChip, styles.metaChipFulfillment]}>
+                  <Ionicons name="business-outline" size={14} color="#7C3AED" />
+                  <Text style={[styles.metaChipText, styles.metaChipTextFulfillment]}>
+                    {fulfillmentLabel}
+                  </Text>
+                </View>
+              ) : null}
+              {deliveryLabel ? (
+                <View style={[styles.metaChip, styles.metaChipDelivery]}>
+                  <Ionicons name="cube-outline" size={14} color="#0369A1" />
+                  <Text style={[styles.metaChipText, styles.metaChipTextDelivery]}>{deliveryLabel}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          {(fulfillmentLabel || deliveryLabel) ? (
+            <Text style={styles.deliveryFixedNote}>
+              Delivery responsibility and method are fixed for this listing and cannot be changed by the seller.
+            </Text>
+          ) : null}
+          {product.deliveryNotes ? (
+            <View style={styles.deliveryNotesBox}>
+              <Text style={styles.deliveryNotesTitle}>Delivery & pickup</Text>
+              <Text style={styles.deliveryNotesBody}>{product.deliveryNotes}</Text>
+            </View>
+          ) : null}
 
           {/* Ratings */}
           <View style={styles.ratingSection}>
@@ -330,6 +380,24 @@ function ProductDetailContent() {
                 <Text style={styles.detailLabel}>Category:</Text>
                 <Text style={styles.detailValue}>{product.category.name}</Text>
               </View>
+              {conditionLabel ? (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Condition:</Text>
+                  <Text style={styles.detailValue}>{conditionLabel}</Text>
+                </View>
+              ) : null}
+              {fulfillmentLabel ? (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Delivery responsibility:</Text>
+                  <Text style={styles.detailValue}>{fulfillmentLabel}</Text>
+                </View>
+              ) : null}
+              {deliveryLabel ? (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>How delivery works:</Text>
+                  <Text style={styles.detailValue}>{deliveryLabel}</Text>
+                </View>
+              ) : null}
               <View style={styles.detailItem}>
                 <Text style={styles.detailLabel}>Vendor:</Text>
                 <Text style={styles.detailValue}>{product.vendor}</Text>
@@ -487,17 +555,20 @@ function ProductDetailContent() {
                 styles.addToCartButton,
                 product.stock === 0 && styles.addToCartButtonDisabled,
                 isInCart && product.stock > 0 && styles.addToCartButtonInCart,
+                isBusy && styles.addToCartButtonBusy,
               ]}
               onPress={handleAddToCart}
-              disabled={product.stock === 0}
+              disabled={product.stock === 0 || isBusy}
               activeOpacity={0.8}
             >
-              {product.stock === 0 ? (
+              {isBusy ? (
+                <ActivityIndicator size="small" color={isInCart ? '#667eea' : '#FFFFFF'} />
+              ) : product.stock === 0 ? (
                 <Text style={styles.addToCartText}>Out of Stock</Text>
               ) : isInCart ? (
                 <>
                   <Ionicons name="checkmark-circle" size={20} color="#667eea" style={styles.cartIcon} />
-                  <Text style={styles.removeFromCartText}>In Cart</Text>
+                  <Text style={styles.removeFromCartText}>View Cart</Text>
                 </>
               ) : (
                 <>
@@ -667,6 +738,64 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
     marginBottom: 16,
+  },
+  metaChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  metaChipDelivery: {
+    backgroundColor: '#E0F2FE',
+  },
+  metaChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4F46E5',
+  },
+  metaChipTextDelivery: {
+    color: '#0369A1',
+  },
+  metaChipFulfillment: {
+    backgroundColor: '#F5F3FF',
+  },
+  metaChipTextFulfillment: {
+    color: '#7C3AED',
+  },
+  deliveryFixedNote: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  deliveryNotesBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  deliveryNotesTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  deliveryNotesBody: {
+    fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 20,
   },
   ratingSection: {
     flexDirection: 'row',
@@ -976,6 +1105,9 @@ const styles = StyleSheet.create({
   addToCartButtonInCart: {
     backgroundColor: '#F3F4F6',
     shadowColor: '#10B981',
+  },
+  addToCartButtonBusy: {
+    opacity: 0.7,
   },
   removeFromCartText: {
     color: '#667eea',

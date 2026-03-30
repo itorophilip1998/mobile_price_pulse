@@ -32,47 +32,35 @@ export function OTPInput({
   const handleChange = (text: string, index: number) => {
     // Only allow numbers
     const numericText = text.replace(/[^0-9]/g, '');
-    
-    if (numericText.length > 1) {
-      // Handle paste - extract only numbers and take first 'length' digits
-      const pastedText = numericText.slice(0, length);
+    const isPaste = numericText.length > 1;
+
+    if (isPaste) {
+      // Paste: spread digits across all boxes (handles "123456", "123 456", "12-34-56")
+      const digits = numericText.slice(0, length).split('');
       const newOtp = Array(length).fill('');
-      
-      // Fill OTP array with pasted digits
-      pastedText.split('').forEach((char, i) => {
-        if (i < length) {
-          newOtp[i] = char;
-        }
+      digits.forEach((char, i) => {
+        if (i < length) newOtp[i] = char;
       });
-      
       setOtp(newOtp);
-      
-      // Focus on the last filled input or the last input
-      const lastFilledIndex = Math.min(pastedText.length - 1, length - 1);
+      const lastIndex = Math.min(digits.length, length) - 1;
       setTimeout(() => {
-        inputRefs.current[lastFilledIndex]?.focus();
+        inputRefs.current[Math.max(0, lastIndex)]?.focus();
       }, 50);
-      
-      // Check if complete and auto-submit
-      if (pastedText.length === length && pastedText.split('').every((char) => char !== '')) {
-        setTimeout(() => {
-          onComplete(pastedText);
-        }, 100);
+      if (digits.length >= length) {
+        setTimeout(() => onComplete(newOtp.join('')), 100);
       }
       return;
     }
 
+    // Single character (typing)
+    const digit = numericText.slice(-1); // only take last char in case of any edge case
     const newOtp = [...otp];
-    newOtp[index] = numericText;
+    newOtp[index] = digit;
     setOtp(newOtp);
-
-    // Auto-focus next input
-    if (numericText && index < length - 1) {
+    if (digit && index < length - 1) {
       inputRefs.current[index + 1]?.focus();
     }
-
-    // Check if complete
-    if (newOtp.every((digit) => digit !== '')) {
+    if (newOtp.every((d) => d !== '')) {
       onComplete(newOtp.join(''));
     }
   };
@@ -112,7 +100,7 @@ export function OTPInput({
               onKeyPress={(e) => handleKeyPress(e, index)}
               onFocus={() => handleFocus(index)}
               keyboardType="number-pad"
-              maxLength={1}
+              maxLength={length}
               selectTextOnFocus
               editable={!disabled}
               autoFocus={autoFocus && index === 0}

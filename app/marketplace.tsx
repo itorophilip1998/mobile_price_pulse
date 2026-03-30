@@ -13,7 +13,7 @@ import {
 import { ScrollView } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ProtectedScreen } from '@/components/auth/protected-screen';
 import { useAuth } from '@/hooks/use-auth';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -27,26 +27,29 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { useGlobalSearch } from '@/hooks/use-global-search';
 import { wishlistAPI } from '@/lib/api/wishlist';
 import { ProductCard } from '@/components/product-card';
+import { formatProductCondition } from '@/lib/product-meta';
 import { searchAPI, type GlobalSearchResponse } from '@/lib/api/search';
 import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get('window');
+const GRID_PADDING = 16;
+const GRID_GAP = 12;
+const CARD_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 function MarketplaceContent() {
+  const insets = useSafeAreaInsets();
   const { user, signout } = useAuth();
-  const { cart, addToCart, removeItem } = useCart();
+  const { cart, addToCart, removeItem, busyProductIds } = useCart();
   const { showToast } = useToast();
+  const showCartFab = cart && cart.count > 0;
   const params = useLocalSearchParams<{ category?: string }>();
   
   // State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>(params.category || '');
-  const [showFilters, setShowFilters] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [sortBy, setSortBy] = useState<string>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [minPrice, setMinPrice] = useState<string>('');
-  const [maxPrice, setMaxPrice] = useState<string>('');
   const [wishlist, setWishlist] = useState<Set<string>>(new Set());
   const [wishlistCount, setWishlistCount] = useState(0);
   const [loadingWishlist, setLoadingWishlist] = useState(true);
@@ -82,6 +85,12 @@ function MarketplaceContent() {
     }
   }, [params.category]);
 
+  // Clear search state on marketplace so main grid shows category-only (search is on /search page)
+  useEffect(() => {
+    setSearchQuery('');
+    setImageSearchResult(null);
+  }, []);
+
   // Debounce search query for better performance
   const debouncedSearch = useDebounce(searchQuery, 500);
 
@@ -107,8 +116,6 @@ function MarketplaceContent() {
   } = useProducts({
     category: selectedCategory || undefined,
     search: debouncedSearch || undefined,
-    minPrice: minPrice ? parseFloat(minPrice) : undefined,
-    maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
     sortBy,
     sortOrder,
     limit: 20,
@@ -187,23 +194,6 @@ function MarketplaceContent() {
     }
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // Apply filters
-  const applyFilters = useCallback(() => {
-    setShowFilters(false);
-    refetch();
-  }, [refetch]);
-
-  // Clear filters
-  const clearFilters = useCallback(() => {
-    setMinPrice('');
-    setMaxPrice('');
-    setSortBy('createdAt');
-    setSortOrder('desc');
-    setSelectedCategory('');
-    setSearchQuery('');
-    setShowFilters(false);
-  }, []);
-
   // Check if product is in cart
   const isInCart = useCallback(
     (productId: string) => {
@@ -231,7 +221,8 @@ function MarketplaceContent() {
           setTipToast({ message: 'Added to cart', type: 'success' });
         }
       } catch (error) {
-        setTipToast({ message: 'Failed to update cart', type: 'error' });
+        const message = error instanceof Error ? error.message : 'Failed to update cart';
+        setTipToast({ message, type: 'error' });
       }
     },
     [addToCart, removeItem, cart, isInCart],
@@ -282,9 +273,10 @@ function MarketplaceContent() {
   // Render product card
   const renderProduct = useCallback(
     ({ item }: { item: Product }) => {
-      const hasDiscount = item.discount && item.discount > 0;
+      const hasDiscount = !!(item.discount != null && Number(item.discount) > 0);
       const imageUrl = item.image || item.images?.[0] || 'https://via.placeholder.com/400x400?text=No+Image';
       const isWishlisted = wishlist.has(item.id);
+      const conditionLabel = formatProductCondition(item.condition);
 
       return (
         <View style={styles.productCard}>
@@ -320,60 +312,56 @@ function MarketplaceContent() {
           <View style={styles.productInfo}>
             <TouchableOpacity onPress={() => handleProductPress(item)} activeOpacity={0.7}>
               <Text style={styles.productName} numberOfLines={2}>
-                {item.name}
+                {String(item.name ?? '')}
               </Text>
             </TouchableOpacity>
-            <Text style={styles.productVendor}>{item.vendor}</Text>
+            {conditionLabel ? (
+              <View style={styles.conditionBadge}>
+                <Text style={styles.conditionBadgeText} numberOfLines={1}>
+                  {conditionLabel}
+                </Text>
+              </View>
+            ) : null}
+            <Text style={styles.productVendor} numberOfLines={1}>{String(item.vendor ?? '')}</Text>
             
             {/* Ratings */}
             <View style={styles.ratingContainer}>
-              <Ionicons name="star" size={14} color="#FBBF24" />
-              <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
-              <Text style={styles.reviewsText}>({String(item.reviews || 0)})</Text>
+              <Ionicons name="star" size={12} color="#FBBF24" />
+              <Text style={styles.ratingText}>{Number(item.rating ?? 0).toFixed(1)}</Text>
+              <Text style={styles.reviewsText}>({String(item.reviews ?? 0)})</Text>
             </View>
             
             {/* Price */}
             <View style={styles.priceContainer}>
-              <Text style={styles.price}>₦{item.price.toLocaleString()}</Text>
-              {item.originalPrice && (
+              <Text style={styles.price}>₦{Number(item.price ?? 0).toLocaleString()}</Text>
+              {(item.originalPrice != null && Number(item.originalPrice) > 0) ? (
                 <Text style={styles.originalPrice}>
-                  ₦{item.originalPrice.toLocaleString()}
+                  ₦{Number(item.originalPrice).toLocaleString()}
                 </Text>
-              )}
+              ) : null}
             </View>
             
             {/* Add to Cart / Remove Button */}
             {(() => {
               const inCart = isInCart(item.id);
+              const isBusy = busyProductIds.has(item.id);
               return (
-                <View style={inCart ? styles.addToCartButtonWrapper : undefined}>
-                  {inCart && (
-                    <LinearGradient
-                      colors={['#667eea', '#764ba2']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={StyleSheet.absoluteFillObject}
-                    />
-                  )}
                   <TouchableOpacity
                     style={[
                       styles.addToCartButton,
                       inCart && styles.addToCartButtonInCart,
+                      isBusy && styles.addToCartButtonBusy,
                     ]}
                     onPress={() => handleAddToCart(item)}
                     activeOpacity={0.8}
-                    disabled={false}
+                    disabled={isBusy}
                   >
-                    {!inCart ? (
+                    {isBusy ? (
+                      <ActivityIndicator size="small" color={inCart ? '#667eea' : '#FFFFFF'} />
+                    ) : !inCart ? (
                       <>
-                        <LinearGradient
-                          colors={['#667eea', '#764ba2']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
-                          style={StyleSheet.absoluteFillObject}
-                        />
                         <Ionicons name="cart" size={18} color="#FFFFFF" style={styles.cartIcon} />
-                        <Text style={styles.addToCartText}>Add to Cart</Text>
+                        <Text style={styles.addToCartText}>Add to cart</Text>
                       </>
                     ) : (
                       <>
@@ -382,14 +370,13 @@ function MarketplaceContent() {
                       </>
                     )}
                   </TouchableOpacity>
-                </View>
               );
             })()}
           </View>
         </View>
       );
     },
-    [handleAddToCart, toggleWishlist, wishlist, handleProductPress, isInCart],
+    [handleAddToCart, toggleWishlist, wishlist, handleProductPress, isInCart, busyProductIds],
   );
 
   const loading = productsLoading && products.length === 0;
@@ -414,15 +401,10 @@ function MarketplaceContent() {
           </View>
           <View style={styles.headerRight}>
             <TouchableOpacity
-              style={styles.cartIconButton}
-              onPress={() => router.push('/cart')}
+              style={styles.headerIconButton}
+              onPress={() => router.push('/search')}
             >
-              <Ionicons name="cart" size={24} color="#667eea" />
-              {cart && cart.count > 0 && (
-                <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeText}>{cart.count}</Text>
-                </View>
-              )}
+              <Ionicons name="search" size={24} color="#667eea" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.menuButton}
@@ -431,51 +413,6 @@ function MarketplaceContent() {
               <Ionicons name="ellipsis-vertical" size={24} color="#667eea" />
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#6B7280" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search products worldwide..."
-            placeholderTextColor="#9CA3AF"
-            value={searchQuery}
-            onChangeText={(text) => {
-              clearImageSearchResult();
-              setSearchQuery(text);
-            }}
-            multiline={false}
-            numberOfLines={1}
-            clearButtonMode="while-editing"
-          />
-          <TouchableOpacity
-            style={styles.searchActionButton}
-            onPress={handleVoiceSearch}
-          >
-            <Ionicons name="mic-outline" size={22} color="#667eea" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.searchActionButton}
-            onPress={handleSearchByImage}
-            disabled={imageSearchLoading}
-          >
-            {imageSearchLoading ? (
-              <ActivityIndicator size="small" color="#667eea" />
-            ) : (
-              <Ionicons name="image-outline" size={22} color="#667eea" />
-            )}
-          </TouchableOpacity>
-          {(searchQuery.length > 0 || imageSearchResult) && (
-            <TouchableOpacity
-              onPress={() => {
-                setSearchQuery('');
-                clearImageSearchResult();
-              }}
-            >
-              <Ionicons name="close-circle" size={20} color="#6B7280" />
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
@@ -491,13 +428,9 @@ function MarketplaceContent() {
               style={[
                 styles.categoryChip,
                 selectedCategory === item.slug && styles.categoryChipActive,
-                item.isPinned && styles.categoryChipPinned,
               ]}
               onPress={() => setSelectedCategory(item.slug || '')}
             >
-              {item.isPinned && (
-                <Ionicons name="pin" size={12} color="#667eea" style={styles.pinIcon} />
-              )}
               <Text
                 style={[
                   styles.categoryText,
@@ -527,7 +460,7 @@ function MarketplaceContent() {
             style={styles.menuItem}
             onPress={() => {
               setShowMenu(false);
-              showToast('Orders feature coming soon', 'info');
+              router.push('/orders');
             }}
           >
             <Ionicons name="receipt-outline" size={20} color="#374151" />
@@ -537,7 +470,7 @@ function MarketplaceContent() {
             style={styles.menuItem}
             onPress={() => {
               setShowMenu(false);
-              showToast('Track items feature coming soon', 'info');
+              router.push('/orders');
             }}
           >
             <Ionicons name="location-outline" size={20} color="#374151" />
@@ -550,7 +483,11 @@ function MarketplaceContent() {
               router.push('/wishlist');
             }}
           >
-            <Ionicons name="heart-outline" size={20} color="#374151" />
+            <Ionicons
+              name={wishlistCount > 0 ? 'heart' : 'heart-outline'}
+              size={20}
+              color={wishlistCount > 0 ? '#EF4444' : '#374151'}
+            />
             <Text style={styles.menuItemText}>Wishlist</Text>
             {wishlistCount > 0 && (
               <View style={styles.wishlistBadge}>
@@ -572,11 +509,11 @@ function MarketplaceContent() {
             style={styles.menuItem}
             onPress={() => {
               setShowMenu(false);
-              router.push('/become-vendor');
+              router.push('/vendor');
             }}
           >
             <Ionicons name="storefront-outline" size={20} color="#374151" />
-            <Text style={styles.menuItemText}>Become a Vendor</Text>
+            <Text style={styles.menuItemText}>My Shop</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.menuItem}
@@ -610,30 +547,6 @@ function MarketplaceContent() {
           </TouchableOpacity>
         </View>
       )}
-
-      {/* Filter Bar */}
-      <View style={styles.filterBar}>
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => setShowFilters(true)}
-        >
-          <Ionicons name="filter" size={18} color="#667eea" />
-          <Text style={styles.filterButtonText}>Filters</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.sortButton}
-          onPress={() => {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-          }}
-        >
-          <Ionicons
-            name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
-            size={18}
-            color="#667eea"
-          />
-          <Text style={styles.filterButtonText}>Sort</Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Products Grid or Global Search (Our products + Suggested) */}
       {isGlobalSearchMode ? (
@@ -669,6 +582,7 @@ function MarketplaceContent() {
                     type="internal"
                     product={item}
                     isInCart={isInCart(item.id)}
+                    isBusy={busyProductIds.has(item.id)}
                     isWishlisted={wishlist.has(item.id)}
                     onPress={() => handleProductPress(item)}
                     onAddToCart={handleAddToCart}
@@ -728,7 +642,7 @@ function MarketplaceContent() {
           <Text style={styles.emptyText}>No products found</Text>
           <Text style={styles.emptySubtext}>
             {debouncedSearch || selectedCategory
-              ? 'Try adjusting your filters'
+              ? 'Try a different search or category'
               : 'Products will appear here once loaded'}
           </Text>
         </View>
@@ -738,7 +652,8 @@ function MarketplaceContent() {
           renderItem={renderProduct}
           keyExtractor={(item) => item.id}
           numColumns={2}
-          contentContainerStyle={styles.productsGrid}
+          contentContainerStyle={styles.productsListContainer}
+          columnWrapperStyle={styles.productsRow}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.5}
           ListFooterComponent={
@@ -756,107 +671,27 @@ function MarketplaceContent() {
         />
       )}
 
-      {/* Filters Modal */}
-      <Modal
-        visible={showFilters}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowFilters(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filters</Text>
-              <TouchableOpacity onPress={() => setShowFilters(false)}>
-                <Ionicons name="close" size={24} color="#111827" />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              style={styles.modalBody}
-              data={[
-                { type: 'price' },
-                { type: 'sort' },
-              ]}
-              renderItem={({ item }) => (
-                <>
-                  {item.type === 'price' && (
-                    <View style={styles.filterSection}>
-                      <Text style={styles.filterSectionTitle}>Price Range</Text>
-                      <View style={styles.priceInputContainer}>
-                        <View style={styles.priceInput}>
-                          <Text style={styles.priceLabel}>Min</Text>
-                          <TextInput
-                            style={styles.priceInputField}
-                            placeholder="0"
-                            value={minPrice}
-                            onChangeText={setMinPrice}
-                            keyboardType="numeric"
-                          />
-                        </View>
-                        <View style={styles.priceInput}>
-                          <Text style={styles.priceLabel}>Max</Text>
-                          <TextInput
-                            style={styles.priceInputField}
-                            placeholder="100000"
-                            value={maxPrice}
-                            onChangeText={setMaxPrice}
-                            keyboardType="numeric"
-                          />
-                        </View>
-                      </View>
-                    </View>
-                  )}
-
-                  {item.type === 'sort' && (
-                    <View style={styles.filterSection}>
-                      <Text style={styles.filterSectionTitle}>Sort By</Text>
-                      {['createdAt', 'price', 'rating', 'reviews'].map((option) => (
-                        <TouchableOpacity
-                          key={option}
-                          style={[
-                            styles.sortOption,
-                            sortBy === option && styles.sortOptionActive,
-                          ]}
-                          onPress={() => setSortBy(option)}
-                        >
-                          <Text
-                            style={[
-                              styles.sortOptionText,
-                              sortBy === option && styles.sortOptionTextActive,
-                            ]}
-                          >
-                            {option.charAt(0).toUpperCase() + option.slice(1)}
-                          </Text>
-                          {sortBy === option && (
-                            <Ionicons name="checkmark" size={20} color="#667eea" />
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </>
-              )}
-              keyExtractor={(item) => item.type}
+      {/* Floating Cart Button - only when cart has items */}
+      {showCartFab && (
+        <TouchableOpacity
+          style={[styles.cartFab, { bottom: 20 + insets.bottom }]}
+          onPress={() => router.push('/cart')}
+          activeOpacity={0.9}
+        >
+          <View style={styles.cartFabInner}>
+            <LinearGradient
+              colors={['#667eea', '#764ba2']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFillObject}
             />
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.clearButton} onPress={clearFilters}>
-                <Text style={styles.clearButtonText}>Clear</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.applyButton} onPress={applyFilters}>
-                <LinearGradient
-                  colors={['#667eea', '#764ba2']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <Text style={styles.applyButtonText}>Apply</Text>
-              </TouchableOpacity>
-            </View>
+            <Ionicons name="cart" size={26} color="#FFFFFF" />
           </View>
-        </View>
-      </Modal>
+          <View style={styles.cartFabBadge}>
+            <Text style={styles.cartFabBadgeText}>{cart!.count}</Text>
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* Tip Toast */}
       {tipToast && (
@@ -888,7 +723,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 6,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
@@ -896,7 +731,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   headerLeft: {
     flex: 1,
@@ -916,6 +751,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 2,
+  },
+  headerIconButton: {
+    padding: 8,
   },
   cartIconButton: {
     position: 'relative',
@@ -962,17 +800,17 @@ const styles = StyleSheet.create({
   },
   wishlistBadge: {
     marginLeft: 'auto',
-    backgroundColor: '#EF4444',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 999,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 6,
   },
   wishlistBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
+    color: '#4B5563',
+    fontSize: 10,
     fontWeight: '700',
   },
   cartBadge: {
@@ -990,6 +828,48 @@ const styles = StyleSheet.create({
   cartBadgeText: {
     color: '#FFFFFF',
     fontSize: 10,
+    fontWeight: '700',
+  },
+  cartFab: {
+    position: 'absolute',
+    right: 20,
+    width: 60,
+    height: 60,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  cartFabInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartFabBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -6,
+    backgroundColor: '#EF4444',
+    borderRadius: 12,
+    minWidth: 22,
+    height: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    zIndex: 1,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  cartFabBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
     fontWeight: '700',
   },
   searchContainer: {
@@ -1035,17 +915,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-    minHeight: 60,
-    maxHeight: 60,
+    minHeight: 52,
+    maxHeight: 52,
   },
   categoriesContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: GRID_PADDING,
+    paddingVertical: 6,
     alignItems: 'center',
   },
   categoryLoadingContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 60,
@@ -1057,27 +937,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   categoryChip: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
     backgroundColor: '#F3F4F6',
-    marginRight: 8,
+    marginRight: 6,
     minHeight: 36,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#9CA3AF',
+    borderColor: '#E5E7EB',
   },
   categoryChipActive: {
     backgroundColor: '#667eea',
     borderColor: '#667eea',
-  },
-  categoryChipPinned: {
-    borderColor: '#667eea',
-    borderWidth: 1.5,
-  },
-  pinIcon: {
-    marginRight: 4,
   },
   categoryText: {
     fontSize: 14,
@@ -1122,9 +995,19 @@ const styles = StyleSheet.create({
     color: '#667eea',
   },
   productsGrid: {
-    padding: 8,
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: GRID_GAP,
+    paddingBottom: 24,
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: GRID_GAP,
+  },
+  productsListContainer: {
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: GRID_GAP,
+    paddingBottom: 24,
+  },
+  productsRow: {
     justifyContent: 'space-between',
   },
   globalSearchScroll: {
@@ -1180,12 +1063,12 @@ const styles = StyleSheet.create({
     color: '#667eea',
   },
   productCard: {
-    width: (width - 32) / 2,
+    width: CARD_WIDTH,
+    marginBottom: GRID_GAP,
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#9CA3AF',
-    margin: 8,
+    borderColor: '#E5E7EB',
     overflow: 'hidden',
   },
   productImageContainer: {
@@ -1215,58 +1098,43 @@ const styles = StyleSheet.create({
   },
   wishlistButton: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    top: 8,
+    right: 8,
+    padding: 6,
     zIndex: 2,
   },
   addToCartButtonWrapper: {
     marginTop: 12,
     borderRadius: 14,
     padding: 1.5,
-    overflow: 'hidden',
   },
   addToCartButton: {
-    marginTop: 12,
-    borderRadius: 12,
-    paddingVertical: 12,
+    marginTop: 10,
+    borderRadius: 10,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    shadowColor: '#667eea',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: '#667eea',
   },
   addToCartButtonInCart: {
     backgroundColor: '#F3F4F6',
-    marginTop: 0,
-    shadowColor: '#10B981',
+  },
+  addToCartButtonBusy: {
+    opacity: 0.7,
   },
   cartIcon: {
     marginRight: 6,
   },
   addToCartText: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
   },
   removeFromCartText: {
     color: '#667eea',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
   },
   gradientBorder: {
     position: 'absolute',
@@ -1295,52 +1163,66 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   productInfo: {
-    padding: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     flex: 1,
     justifyContent: 'space-between',
   },
   productName: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
     color: '#111827',
-    marginBottom: 4,
-    lineHeight: 22,
+    marginBottom: 2,
+    lineHeight: 17,
+  },
+  conditionBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    marginBottom: 3,
+  },
+  conditionBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#4F46E5',
   },
   productVendor: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#6B7280',
-    marginBottom: 8,
+    marginBottom: 2,
   },
   ratingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 8,
-    gap: 4,
+    marginTop: 2,
+    marginBottom: 2,
+    gap: 2,
   },
   ratingText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#111827',
     marginLeft: 2,
   },
   reviewsText: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#9CA3AF',
-    marginLeft: 4,
+    marginLeft: 2,
   },
   priceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   price: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '700',
     color: '#111827',
   },
   originalPrice: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#9CA3AF',
     textDecorationLine: 'line-through',
   },

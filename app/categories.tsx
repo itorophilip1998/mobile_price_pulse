@@ -125,9 +125,6 @@ function CategoriesContent() {
             />
             <View style={styles.categoryInfo}>
               <View style={styles.categoryNameRow}>
-                {item.isPinned && (
-                  <Ionicons name="pin" size={14} color="#FFFFFF" style={styles.categoryPinIcon} />
-                )}
                 <Text style={styles.categoryName} numberOfLines={2}>
                   {item.name}
                 </Text>
@@ -137,9 +134,6 @@ function CategoriesContent() {
                   {item.description}
                 </Text>
               )}
-            </View>
-            <View style={styles.categoryIcon}>
-              <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
             </View>
           </View>
         </TouchableOpacity>
@@ -383,9 +377,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
-  categoryPinIcon: {
-    marginRight: 6,
-  },
   categoryName: {
     fontSize: 16,
     fontWeight: '700',
@@ -396,17 +387,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#E5E7EB',
     lineHeight: 16,
-  },
-  categoryIcon: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(102, 126, 234, 0.9)',
-    borderRadius: 20,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   loadingContainer: {
     flex: 1,

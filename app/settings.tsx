@@ -21,6 +21,46 @@ function SettingsContent() {
         </View>
 
         <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/notifications')}
+          >
+            <View style={styles.settingsItemContent}>
+              <View style={styles.settingsItemLeft}>
+                <Ionicons name="notifications-outline" size={22} color="#374151" style={styles.settingsItemIcon} />
+                <Text style={styles.settingsItemText}>Notifications</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/wallet')}
+          >
+            <View style={styles.settingsItemContent}>
+              <View style={styles.settingsItemLeft}>
+                <Ionicons name="wallet-outline" size={22} color="#374151" style={styles.settingsItemIcon} />
+                <Text style={styles.settingsItemText}>Wallet & Fund</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.settingsItem, styles.settingsItemLast]}
+            onPress={() => router.push('/wallet')}
+          >
+            <View style={styles.settingsItemContent}>
+              <View style={styles.settingsItemLeft}>
+                <Ionicons name="card-outline" size={22} color="#374151" style={styles.settingsItemIcon} />
+                <Text style={styles.settingsItemText}>Add card / Payment methods</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.card}>
           <Text style={styles.sectionTitle}>Legal</Text>
           <TouchableOpacity
             style={styles.settingsItem}
@@ -95,14 +135,25 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   settingsItem: {
-    paddingVertical: 12,
+    paddingVertical: 14,
+    paddingLeft: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+  },
+  settingsItemLast: {
+    borderBottomWidth: 0,
   },
   settingsItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  settingsItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settingsItemIcon: {
+    marginRight: 12,
   },
   settingsItemText: {
     fontSize: 15,

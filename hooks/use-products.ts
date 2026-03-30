@@ -11,7 +11,9 @@ export interface UseProductsParams {
   maxPrice?: number;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  condition?: 'BRAND_NEW' | 'FOREIGN_USED' | 'LOCAL_USED';
   limit?: number;
+  enabled?: boolean;
 }
 
 export function useProducts(params: UseProductsParams = {}) {
@@ -22,11 +24,13 @@ export function useProducts(params: UseProductsParams = {}) {
     maxPrice,
     sortBy = 'createdAt',
     sortOrder = 'desc',
+    condition,
     limit = 20,
+    enabled = true,
   } = params;
 
   return useInfiniteQuery<ProductsResponse>({
-    queryKey: [PRODUCTS_QUERY_KEY, category, search, minPrice, maxPrice, sortBy, sortOrder],
+    queryKey: [PRODUCTS_QUERY_KEY, category, search, minPrice, maxPrice, sortBy, sortOrder, condition],
     queryFn: ({ pageParam = 1 }) =>
       productsAPI.getProducts({
         page: pageParam as number,
@@ -37,6 +41,7 @@ export function useProducts(params: UseProductsParams = {}) {
         maxPrice,
         sortBy,
         sortOrder,
+        condition,
       }),
     getNextPageParam: (lastPage) => {
       const { pagination } = lastPage;
@@ -48,6 +53,7 @@ export function useProducts(params: UseProductsParams = {}) {
     initialPageParam: 1,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
+    enabled,
   });
 }
 

@@ -1,20 +1,14 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { getClerkToken } from '../clerk-token';
+import { attachAuthInterceptors } from './auth-interceptor';
 import type { Product } from './products';
 
 const client = axios.create({
-  baseURL: `${API_CONFIG.BASE_URL}/search`,
+  baseURL: API_CONFIG.BASE_URL.replace(/\/+$/, ''),
   timeout: API_CONFIG.TIMEOUT,
 });
 
-client.interceptors.request.use(async (config) => {
-  const token = await getClerkToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+attachAuthInterceptors(client);
 
 export interface SuggestedProduct {
   id: string;
@@ -52,12 +46,12 @@ export const searchAPI = {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
   }): Promise<GlobalSearchResponse> {
-    const response = await client.get<GlobalSearchResponse>('', { params });
+    const response = await client.get<GlobalSearchResponse>('/search', { params });
     return response.data;
   },
 
   async searchByImage(formData: FormData): Promise<GlobalSearchResponse> {
-    const response = await client.post<GlobalSearchResponse>('by-image', formData);
+    const response = await client.post<GlobalSearchResponse>('/search/by-image', formData);
     return response.data;
   },
 };

@@ -16,10 +16,18 @@ import { useToast } from '@/components/ui/toast-provider';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Image as ExpoImage } from 'expo-image';
+import { ordersAPI, type PaymentMethod } from '@/lib/api/orders';
+import { walletAPI } from '@/lib/api/wallet';
+import { CHECKOUT_PAYMENT_OPTIONS } from '@/lib/payment-methods';
+import { useAuth as useClerkAuth } from '@clerk/clerk-expo';
 
 function CartContent() {
-  const { cart, loading, updateQuantity, removeItem, clearCart } = useCart();
+  const { cart, loading, updateQuantity, removeItem, clearCart, refreshCart } = useCart();
   const { showToast } = useToast();
+  const { getToken } = useClerkAuth();
+  const [placing, setPlacing] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('WALLET');
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   const handleUpdateQuantity = async (itemId: string, quantity: number) => {
     if (quantity <= 0) {
@@ -48,6 +56,50 @@ function CartContent() {
       showToast('Cart cleared', 'success');
     } catch (error) {
       showToast('Failed to clear cart', 'error');
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const w = await walletAPI.getBalance(token ?? undefined);
+        if (!cancelled) setWalletBalance(w.balance);
+      } catch {
+        if (!cancelled) setWalletBalance(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
+
+  const handlePlaceOrder = async () => {
+    if (!cart || cart.items.length === 0) return;
+    if (
+      paymentMethod === 'WALLET' &&
+      walletBalance != null &&
+      walletBalance < cart.total
+    ) {
+      showToast('Wallet balance is too low for this order. Choose another payment method or add funds.', 'error');
+      return;
+    }
+    setPlacing(true);
+    try {
+      const token = await getToken();
+      await ordersAPI.createFromCart(paymentMethod, token ?? undefined);
+      await refreshCart();
+      showToast('Order placed successfully', 'success');
+      router.push('/orders');
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          : null;
+      showToast(message || 'Failed to place order', 'error');
+    } finally {
+      setPlacing(false);
     }
   };
 
@@ -173,6 +225,50 @@ function CartContent() {
             </View>
           </View>
         ))}
+
+        <View style={styles.paymentSection}>
+          <Text style={styles.paymentSectionTitle}>Payment method</Text>
+          <Text style={styles.paymentSectionHint}>
+            Choose how you want to pay. Wallet payments are taken immediately if your balance is enough.
+            Other methods are marked as pending until payment is confirmed.
+          </Text>
+          {CHECKOUT_PAYMENT_OPTIONS.map((opt) => {
+            const selected = paymentMethod === opt.value;
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.paymentOption, selected && styles.paymentOptionSelected]}
+                onPress={() => setPaymentMethod(opt.value)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.paymentOptionRow}>
+                  <Ionicons
+                    name={opt.icon as keyof typeof Ionicons.glyphMap}
+                    size={22}
+                    color={selected ? '#667eea' : '#6B7280'}
+                  />
+                  <View style={styles.paymentOptionText}>
+                    <Text style={[styles.paymentOptionTitle, selected && styles.paymentOptionTitleOn]}>
+                      {opt.title}
+                    </Text>
+                    <Text style={styles.paymentOptionSub}>{opt.subtitle}</Text>
+                  </View>
+                  <View style={[styles.radioOuter, selected && styles.radioOuterOn]}>
+                    {selected ? <View style={styles.radioInner} /> : null}
+                  </View>
+                </View>
+                {opt.value === 'WALLET' && walletBalance != null ? (
+                  <Text style={styles.walletBalanceLine}>
+                    Balance: ₦{walletBalance.toLocaleString()}
+                    {walletBalance < cart.total ? (
+                      <Text style={styles.walletLow}> · Insufficient for this total</Text>
+                    ) : null}
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -180,14 +276,32 @@ function CartContent() {
           <Text style={styles.totalLabel}>Total</Text>
           <Text style={styles.totalAmount}>₦{cart.total.toLocaleString()}</Text>
         </View>
-        <TouchableOpacity style={styles.checkoutButton}>
+        <TouchableOpacity
+          style={[
+            styles.checkoutButton,
+            (placing ||
+              (paymentMethod === 'WALLET' &&
+                walletBalance != null &&
+                walletBalance < cart.total)) &&
+              styles.checkoutButtonDisabled,
+          ]}
+          onPress={handlePlaceOrder}
+          disabled={
+            placing ||
+            (paymentMethod === 'WALLET' &&
+              walletBalance != null &&
+              walletBalance < cart.total)
+          }
+        >
           <LinearGradient
             colors={['#667eea', '#764ba2']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFillObject}
           />
-          <Text style={styles.checkoutButtonText}>Proceed to Checkout</Text>
+          <Text style={styles.checkoutButtonText}>
+            {placing ? 'Placing order...' : 'Proceed to Checkout'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -389,10 +503,96 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  checkoutButtonDisabled: {
+    opacity: 0.5,
+  },
   checkoutButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  paymentSection: {
+    marginTop: 8,
+    marginBottom: 24,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  paymentSectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  paymentSectionHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  paymentOption: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  paymentOptionSelected: {
+    borderColor: '#667eea',
+    backgroundColor: '#F5F3FF',
+  },
+  paymentOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  paymentOptionText: {
+    flex: 1,
+  },
+  paymentOptionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  paymentOptionTitleOn: {
+    color: '#4F46E5',
+  },
+  paymentOptionSub: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  radioOuterOn: {
+    borderColor: '#667eea',
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#667eea',
+  },
+  walletBalanceLine: {
+    marginTop: 10,
+    marginLeft: 32,
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  walletLow: {
+    color: '#DC2626',
+    fontWeight: '600',
   },
 });
 

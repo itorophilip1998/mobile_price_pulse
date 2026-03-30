@@ -1,19 +1,13 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { getClerkToken } from '../clerk-token';
+import { attachAuthInterceptors, withAuth } from './auth-interceptor';
 
 const client = axios.create({
-  baseURL: `${API_CONFIG.BASE_URL}/cart`,
+  baseURL: API_CONFIG.BASE_URL.replace(/\/+$/, ''),
   timeout: API_CONFIG.TIMEOUT,
 });
 
-client.interceptors.request.use(async (config) => {
-  const token = await getClerkToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+attachAuthInterceptors(client);
 
 export interface CartItem {
   id: string;
@@ -36,28 +30,29 @@ export interface Cart {
   count: number;
 }
 
+
 export const cartAPI = {
-  async getCart(): Promise<Cart> {
-    const response = await client.get('');
+  async getCart(authToken?: string | null): Promise<Cart> {
+    const response = await client.get('/cart', withAuth(undefined, authToken ?? null) as object);
     return response.data;
   },
 
-  async addToCart(productId: string, quantity: number = 1): Promise<CartItem> {
-    const response = await client.post('/add', { productId, quantity });
+  async addToCart(productId: string, quantity: number = 1, authToken?: string | null): Promise<CartItem> {
+    const response = await client.post('/cart/add', { productId, quantity }, withAuth(undefined, authToken ?? null) as object);
     return response.data;
   },
 
-  async updateCartItem(itemId: string, quantity: number): Promise<CartItem | null> {
-    const response = await client.put(`/${itemId}`, { quantity });
+  async updateCartItem(itemId: string, quantity: number, authToken?: string | null): Promise<CartItem | null> {
+    const response = await client.put(`/cart/${itemId}`, { quantity }, withAuth(undefined, authToken ?? null) as object);
     return response.data;
   },
 
-  async removeFromCart(itemId: string): Promise<void> {
-    await client.delete(`/${itemId}`);
+  async removeFromCart(itemId: string, authToken?: string | null): Promise<void> {
+    await client.delete(`/cart/${itemId}`, withAuth(undefined, authToken ?? null) as object);
   },
 
-  async clearCart(): Promise<void> {
-    await client.delete('');
+  async clearCart(authToken?: string | null): Promise<void> {
+    await client.delete('/cart', withAuth(undefined, authToken ?? null) as object);
   },
 };
 

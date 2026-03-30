@@ -1,19 +1,13 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { getClerkToken } from '../clerk-token';
+import { attachAuthInterceptors } from './auth-interceptor';
 
 const client = axios.create({
-  baseURL: `${API_CONFIG.BASE_URL}/products`,
+  baseURL: API_CONFIG.BASE_URL.replace(/\/+$/, ''),
   timeout: API_CONFIG.TIMEOUT,
 });
 
-client.interceptors.request.use(async (config) => {
-  const token = await getClerkToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+attachAuthInterceptors(client);
 
 export interface Product {
   id: string;
@@ -29,6 +23,16 @@ export interface Product {
   discount?: number;
   vendor: string;
   stock: number;
+  sellerId?: string | null;
+  shopId?: string | null;
+  isVerified?: boolean;
+  /** Brand new / foreign used / local used (optional, e.g. vehicles) */
+  condition?: 'BRAND_NEW' | 'FOREIGN_USED' | 'LOCAL_USED' | null;
+  /** Set once at listing creation; cannot be changed later */
+  deliveryFulfillment?: 'COMPANY_APP' | 'PRODUCT_OWNER';
+  /** Required on new listings; may be absent for legacy data */
+  deliveryMode?: 'SELLER_ARRANGES' | 'BUYER_PICKUP' | 'FLEXIBLE' | 'THIRD_PARTY';
+  deliveryNotes?: string | null;
   category: {
     id: string;
     name: string;
@@ -65,19 +69,19 @@ export const productsAPI = {
     maxPrice?: number;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    condition?: 'BRAND_NEW' | 'FOREIGN_USED' | 'LOCAL_USED';
   }): Promise<ProductsResponse> {
-    const response = await client.get('', { params });
+    const response = await client.get('/products', { params });
     return response.data;
   },
 
   async getCategories(): Promise<Category[]> {
-    const response = await client.get('/categories');
+    const response = await client.get('/products/categories');
     return response.data;
   },
 
   async getProduct(slug: string): Promise<Product> {
-    const response = await client.get(`/${slug}`);
+    const response = await client.get(`/products/${slug}`);
     return response.data;
   },
 };
-

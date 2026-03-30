@@ -1,10 +1,12 @@
-import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
+import React, { createContext, useState, useEffect, useCallback, useContext, useRef } from 'react';
+import { useAuth as useClerkAuth } from '@clerk/clerk-expo';
 import { cartAPI, Cart, CartItem } from '@/lib/api/cart';
 import { useAuth } from '@/hooks/use-auth';
 
 interface CartContextType {
   cart: Cart | null;
   loading: boolean;
+  busyProductIds: Set<string>;
   addToCart: (productId: string, quantity?: number) => Promise<void>;
   updateQuantity: (itemId: string, quantity: number) => Promise<void>;
   removeItem: (itemId: string) => Promise<void>;
@@ -16,8 +18,21 @@ const CartContext = createContext<CartContextType | null>(null);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
+  const { getToken } = useClerkAuth();
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busyProductIds, setBusyProductIds] = useState<Set<string>>(new Set());
+  const busyRef = useRef<Set<string>>(new Set());
+
+  const markBusy = useCallback((productId: string) => {
+    busyRef.current.add(productId);
+    setBusyProductIds(new Set(busyRef.current));
+  }, []);
+
+  const unmarkBusy = useCallback((productId: string) => {
+    busyRef.current.delete(productId);
+    setBusyProductIds(new Set(busyRef.current));
+  }, []);
 
   const refreshCart = useCallback(async () => {
     if (!isAuthenticated) {
@@ -27,34 +42,69 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const cartData = await cartAPI.getCart();
-      setCart(cartData);
-    } catch (error: any) {
-      const status = error?.response?.status;
-      if (status === 401 || status === 404) {
+      const token = await getToken();
+      const cartData = await cartAPI.getCart(token ?? undefined);
+      if (cartData && Array.isArray(cartData?.items) && typeof cartData?.count === 'number') {
+        setCart({
+          items: cartData.items,
+          total: typeof cartData.total === 'number' ? cartData.total : 0,
+          count: cartData.count,
+        });
+      } else {
+        setCart(null);
+      }
+    } catch (error: unknown) {
+      const status = typeof error === 'object' && error !== null && 'response' in error
+        ? (error as { response?: { status?: number } }).response?.status
+        : undefined;
+      if (status === 401 || status === 404 || status === 500) {
         setCart(null);
       } else {
-        console.error('Error fetching cart:', error);
         setCart(null);
       }
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, getToken]);
 
   useEffect(() => {
     refreshCart();
   }, [refreshCart]);
 
   const addToCart = useCallback(async (productId: string, quantity: number = 1) => {
-    try {
-      await cartAPI.addToCart(productId, quantity);
-      await refreshCart();
-    } catch (error) {
-      console.error('Error adding to cart:', error);
-      throw error;
+    if (busyRef.current.has(productId)) return;
+
+    const token = await getToken();
+    if (!token) {
+      throw new Error('Please sign in to add to cart');
     }
-  }, [refreshCart]);
+
+    markBusy(productId);
+    try {
+      await cartAPI.addToCart(productId, quantity, token);
+      await refreshCart();
+    } catch (error: unknown) {
+      await refreshCart();
+      const status = typeof error === 'object' && error !== null && 'response' in error
+        ? (error as { response?: { status?: number; data?: { message?: string } } }).response?.status
+        : undefined;
+      const rawMessage =
+        typeof error === 'object' && error !== null && 'response' in error
+          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+          : null;
+      const isClerkNotConfigured =
+        typeof rawMessage === 'string' && rawMessage.toLowerCase().includes('clerk is not configured');
+      const message = isClerkNotConfigured
+        ? 'Sign-in service is not set up yet. Please try again later or contact support.'
+        : rawMessage ||
+          (status === 401 ? 'Please sign in to add to cart' : null) ||
+          (status === 404 ? 'Product not found' : null) ||
+          'Could not add to cart. Please try again.';
+      throw new Error(message);
+    } finally {
+      unmarkBusy(productId);
+    }
+  }, [refreshCart, getToken, markBusy, unmarkBusy]);
 
   const updateQuantity = useCallback(async (itemId: string, quantity: number) => {
     if (!cart) return;
@@ -82,9 +132,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
     
     try {
-      await cartAPI.updateCartItem(itemId, quantity);
+      const token = await getToken();
+      await cartAPI.updateCartItem(itemId, quantity, token ?? undefined);
       // Refresh to ensure consistency, but preserve order by using the existing order
-      const freshCart = await cartAPI.getCart();
+      const freshCart = await cartAPI.getCart(token ?? undefined);
       
       // Create a map of fresh items by ID for quick lookup
       const freshItemsMap = new Map(freshCart.items.map((item) => [item.id, item]));
@@ -106,39 +157,46 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         total: freshCart.total,
         count: freshCart.count,
       });
-    } catch (error) {
-      // Revert to previous state on error
+    } catch {
       setCart(previousCart);
-      console.error('Error updating cart:', error);
-      throw error;
+      throw new Error('Failed to update cart');
     }
-  }, [cart]);
+  }, [cart, getToken]);
 
   const removeItem = useCallback(async (itemId: string) => {
+    const productId = cart?.items.find((i) => i.id === itemId)?.product.id;
+    if (productId && busyRef.current.has(productId)) return;
+    if (productId) markBusy(productId);
+
+    const token = await getToken();
     try {
-      await cartAPI.removeFromCart(itemId);
+      await cartAPI.removeFromCart(itemId, token ?? undefined);
       await refreshCart();
-    } catch (error) {
-      console.error('Error removing from cart:', error);
-      throw error;
+    } catch {
+      await refreshCart();
+      throw new Error('Failed to remove item');
+    } finally {
+      if (productId) unmarkBusy(productId);
     }
-  }, [refreshCart]);
+  }, [refreshCart, getToken, cart, markBusy, unmarkBusy]);
 
   const clearCart = useCallback(async () => {
+    const token = await getToken();
     try {
-      await cartAPI.clearCart();
+      await cartAPI.clearCart(token ?? undefined);
       await refreshCart();
-    } catch (error) {
-      console.error('Error clearing cart:', error);
-      throw error;
+    } catch {
+      await refreshCart();
+      throw new Error('Failed to clear cart');
     }
-  }, [refreshCart]);
+  }, [refreshCart, getToken]);
 
   return (
     <CartContext.Provider
       value={{
         cart,
         loading,
+        busyProductIds,
         addToCart,
         updateQuantity,
         removeItem,

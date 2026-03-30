@@ -23,16 +23,16 @@ export function ProtectedScreen({ children }: ProtectedScreenProps) {
     }
   }, [canNavigate, isLoading, isAuthenticated]);
 
+  if (!isAuthenticated) {
+    return null;
+  }
+
   if (isLoading) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#667eea" />
       </View>
     );
-  }
-
-  if (!isAuthenticated) {
-    return null;
   }
 
   return <>{children}</>;

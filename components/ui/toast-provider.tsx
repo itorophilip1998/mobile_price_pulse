@@ -2,8 +2,17 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Toast, ToastType } from './toast';
 
+export interface ShowToastOptions {
+  noTruncate?: boolean;
+}
+
 interface ToastContextType {
-  showToast: (message: string, type?: ToastType, duration?: number) => void;
+  showToast: (
+    message: string,
+    type?: ToastType,
+    duration?: number,
+    options?: ShowToastOptions,
+  ) => void;
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
@@ -25,11 +34,22 @@ export function ToastProvider({ children }: ToastProviderProps) {
     message: string;
     type: ToastType;
     duration: number;
+    noTruncate?: boolean;
   } | null>(null);
 
   const showToast = useCallback(
-    (message: string, type: ToastType = 'info', duration: number = 3000) => {
-      setToast({ message, type, duration });
+    (
+      message: string,
+      type: ToastType = 'info',
+      duration: number = 3000,
+      options?: ShowToastOptions,
+    ) => {
+      setToast({
+        message,
+        type,
+        duration,
+        noTruncate: options?.noTruncate,
+      });
     },
     [],
   );
@@ -46,6 +66,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
           message={toast.message}
           type={toast.type}
           duration={toast.duration}
+          noTruncate={toast.noTruncate}
           onHide={hideToast}
         />
       )}

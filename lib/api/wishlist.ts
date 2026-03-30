@@ -1,20 +1,14 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { getClerkToken } from '../clerk-token';
+import { attachAuthInterceptors } from './auth-interceptor';
 import { Product } from './products';
 
 const client = axios.create({
-  baseURL: `${API_CONFIG.BASE_URL}/wishlist`,
+  baseURL: API_CONFIG.BASE_URL.replace(/\/+$/, ''),
   timeout: API_CONFIG.TIMEOUT,
 });
 
-client.interceptors.request.use(async (config) => {
-  const token = await getClerkToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+attachAuthInterceptors(client);
 
 export interface WishlistItem {
   id: string;
@@ -25,30 +19,30 @@ export interface WishlistItem {
 
 export const wishlistAPI = {
   async getAll(): Promise<WishlistItem[]> {
-    const response = await client.get('/');
+    const response = await client.get('/wishlist');
     return response.data;
   },
 
   async getCount(): Promise<number> {
-    const response = await client.get('/count');
+    const response = await client.get('/wishlist/count');
     return response.data;
   },
 
   async add(productId: string): Promise<WishlistItem> {
-    const response = await client.post('/', { productId });
+    const response = await client.post('/wishlist', { productId });
     return response.data;
   },
 
   async remove(productId: string): Promise<void> {
-    await client.delete(`/${productId}`);
+    await client.delete(`/wishlist/${productId}`);
   },
 
   async clear(): Promise<void> {
-    await client.delete('/');
+    await client.delete('/wishlist');
   },
 
   async check(productId: string): Promise<boolean> {
-    const response = await client.get(`/check/${productId}`);
+    const response = await client.get(`/wishlist/check/${productId}`);
     return response.data;
   },
 };

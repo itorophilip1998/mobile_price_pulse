@@ -15,6 +15,13 @@ This document explains how to configure environment variables for the PricePulse
 - `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` - Google OAuth iOS client ID
 - `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` - Google OAuth Android client ID
 
+### Clerk (Authentication)
+
+- `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` - **Required.** Your Clerk publishable key from the [Clerk Dashboard](https://dashboard.clerk.com).
+
+**"Password has been found in an online data breach"**  
+Clerk rejects passwords that appear in known breaches (Have I Been Pwned). To allow them in development only: Clerk Dashboard → **User & authentication** → **Password** → **Update password requirements** → turn off **Reject compromised passwords**. Use a strong, unique password in production.
+
 ### App Configuration (Optional)
 
 - `EXPO_PUBLIC_ENVIRONMENT` - Environment name (development, staging, production)

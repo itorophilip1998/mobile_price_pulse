@@ -1,19 +1,13 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { getClerkToken } from '../clerk-token';
+import { attachAuthInterceptors } from './auth-interceptor';
 
 const client = axios.create({
-  baseURL: `${API_CONFIG.BASE_URL}/auth`,
+  baseURL: API_CONFIG.BASE_URL.replace(/\/+$/, ''),
   timeout: API_CONFIG.TIMEOUT,
 });
 
-client.interceptors.request.use(async (config) => {
-  const token = await getClerkToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+attachAuthInterceptors(client);
 
 export interface Profile {
   id: string;
@@ -54,11 +48,11 @@ export interface UpdateProfileData {
 
 export const profileAPI = {
   async getCurrentUser(): Promise<User> {
-    const response = await client.get('/me');
+    const response = await client.get('/auth/me');
     return response.data;
   },
   async updateProfile(data: UpdateProfileData): Promise<{ message: string; profile: Profile }> {
-    const response = await client.post('/profile', data);
+    const response = await client.post('/auth/profile', data);
     return response.data;
   },
 };

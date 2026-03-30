@@ -16,9 +16,17 @@ interface ToastProps {
   type?: ToastType;
   duration?: number;
   onHide?: () => void;
+  /** When true, message is not capped to a few lines (full error text). */
+  noTruncate?: boolean;
 }
 
-export function Toast({ message, type = 'info', duration = 2000, onHide }: ToastProps) {
+export function Toast({
+  message,
+  type = 'info',
+  duration = 2000,
+  onHide,
+  noTruncate = false,
+}: ToastProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
@@ -101,11 +109,14 @@ export function Toast({ message, type = 'info', duration = 2000, onHide }: Toast
         colors={getColors()}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={styles.gradient}
+        style={[styles.gradient, noTruncate && styles.gradientWide]}
       >
-        <View style={styles.content}>
+        <View style={[styles.content, noTruncate && styles.contentStack]}>
           <Text style={styles.icon}>{getIcon()}</Text>
-          <Text style={styles.message} numberOfLines={3}>
+          <Text
+            style={styles.message}
+            numberOfLines={noTruncate ? undefined : 3}
+          >
             {message}
           </Text>
         </View>
@@ -118,10 +129,12 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 100 : 80,
+    left: 16,
     right: 16,
     zIndex: 9999,
     elevation: 10,
-    maxWidth: Dimensions.get('window').width * 0.85,
+    maxWidth: Dimensions.get('window').width - 32,
+    alignSelf: 'center',
   },
   gradient: {
     borderRadius: 20,
@@ -133,10 +146,16 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
+  gradientWide: {
+    alignSelf: 'stretch',
+  },
   content: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  contentStack: {
+    alignItems: 'flex-start',
   },
   icon: {
     fontSize: 16,
@@ -145,6 +164,7 @@ const styles = StyleSheet.create({
   },
   message: {
     flex: 1,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',

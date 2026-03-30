@@ -15,27 +15,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSignIn } from '@clerk/clerk-expo';
 import { router } from 'expo-router';
+import { OTPInput } from '@/components/auth/otp-input';
 import { PasswordStrengthIndicator } from '@/components/auth/password-strength';
+import { maskEmail } from '@/lib/utils/mask-email';
 
 export default function ForgotPasswordScreen() {
   const { isLoaded, signIn, setActive } = useSignIn();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [codeEntered, setCodeEntered] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
-  const [codeFocused, setCodeFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [confirmFocused, setConfirmFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const hasEmailValue = email.length > 0;
-  const hasCodeValue = code.length > 0;
   const hasPasswordValue = password.length > 0;
   const hasConfirmValue = confirmPassword.length > 0;
+
+  const handleCodeComplete = (otp: string) => {
+    setCode(otp);
+    setCodeEntered(true);
+  };
 
   const handleSendCode = async () => {
     if (!email.trim()) {
@@ -67,8 +73,8 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleResetPassword = async () => {
-    if (!code.trim()) {
-      Alert.alert('Error', 'Please enter the code from your email');
+    if (!code.trim() || code.length !== 6) {
+      Alert.alert('Error', 'Please enter the 6-digit code from your email');
       return;
     }
     if (!password || password.length < 8) {
@@ -86,9 +92,8 @@ export default function ForgotPasswordScreen() {
       let result = await signIn.attemptFirstFactor({
         strategy: 'reset_password_email_code',
         code: code.trim(),
-        password,
       });
-      if (result.status === 'needs_new_password') {
+      if (result.status === 'needs_new_password' || result.status === 'complete') {
         result = await signIn.resetPassword({ password });
       }
       if (result.status === 'complete' && result.createdSessionId) {
@@ -147,139 +152,134 @@ export default function ForgotPasswordScreen() {
             <Text style={styles.title}>Check your email</Text>
             <Text style={styles.subtitle}>
               We sent a 6-digit code to{'\n'}
-              <Text style={styles.emailText}>{email}</Text>
-              {'\n'}Enter it below with your new password.
+              <Text style={styles.emailText}>{maskEmail(email)}</Text>
+              {'\n'}
+              {codeEntered
+                ? 'Now enter your new password below.'
+                : 'Enter it below.'}
             </Text>
 
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={[styles.input, codeFocused ? styles.inputFocused : null]}
-                placeholder=""
-                placeholderTextColor="transparent"
-                value={code}
-                onChangeText={setCode}
-                onFocus={() => setCodeFocused(true)}
-                onBlur={() => setCodeFocused(false)}
-                keyboardType="number-pad"
-                maxLength={6}
-                autoComplete="one-time-code"
+            <View style={styles.otpWrapper}>
+              <OTPInput
+                length={6}
+                onComplete={handleCodeComplete}
+                autoFocus={true}
+                disabled={codeEntered}
               />
-              <Text
-                style={[
-                  styles.floatingLabel,
-                  codeFocused && styles.floatingLabelFocused,
-                  (codeFocused || hasCodeValue) && styles.floatingLabelActive,
-                  !codeFocused && hasCodeValue && styles.floatingLabelInactive,
-                ]}
-              >
-                Reset code
-              </Text>
             </View>
 
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={[
-                  styles.input,
-                  styles.inputWithEye,
-                  passwordFocused ? styles.inputFocused : null,
-                ]}
-                placeholder=""
-                placeholderTextColor="transparent"
-                value={password}
-                onChangeText={setPassword}
-                onFocus={() => setPasswordFocused(true)}
-                onBlur={() => setPasswordFocused(false)}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoComplete="new-password"
-              />
-              <Text
-                style={[
-                  styles.floatingLabel,
-                  passwordFocused && styles.floatingLabelFocused,
-                  (passwordFocused || hasPasswordValue) && styles.floatingLabelActive,
-                  !passwordFocused && hasPasswordValue && styles.floatingLabelInactive,
-                ]}
-              >
-                New password
-              </Text>
-              <TouchableOpacity
-                onPress={() => setShowPassword((v) => !v)}
-                style={styles.eyeButton}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={22}
-                  color="#6B7280"
-                />
-              </TouchableOpacity>
-            </View>
-            {(passwordFocused || hasPasswordValue) && (
-              <PasswordStrengthIndicator password={password} />
+            {codeEntered && (
+              <>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      styles.inputWithEye,
+                      passwordFocused ? styles.inputFocused : null,
+                    ]}
+                    placeholder=""
+                    placeholderTextColor="transparent"
+                    value={password}
+                    onChangeText={setPassword}
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => setPasswordFocused(false)}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoComplete="new-password"
+                  />
+                  <Text
+                    style={[
+                      styles.floatingLabel,
+                      passwordFocused && styles.floatingLabelFocused,
+                      (passwordFocused || hasPasswordValue) && styles.floatingLabelActive,
+                      !passwordFocused && hasPasswordValue && styles.floatingLabelInactive,
+                    ]}
+                  >
+                    New password
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowPassword((v) => !v)}
+                    style={styles.eyeButton}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={22}
+                      color="#6B7280"
+                    />
+                  </TouchableOpacity>
+                </View>
+                {(passwordFocused || hasPasswordValue) && (
+                  <PasswordStrengthIndicator password={password} />
+                )}
+
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      styles.inputWithEye,
+                      confirmFocused ? styles.inputFocused : null,
+                    ]}
+                    placeholder=""
+                    placeholderTextColor="transparent"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    onFocus={() => setConfirmFocused(true)}
+                    onBlur={() => setConfirmFocused(false)}
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    autoComplete="new-password"
+                  />
+                  <Text
+                    style={[
+                      styles.floatingLabel,
+                      confirmFocused && styles.floatingLabelFocused,
+                      (confirmFocused || hasConfirmValue) && styles.floatingLabelActive,
+                      !confirmFocused && hasConfirmValue && styles.floatingLabelInactive,
+                    ]}
+                  >
+                    Confirm password
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowConfirmPassword((v) => !v)}
+                    style={styles.eyeButton}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons
+                      name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={22}
+                      color="#6B7280"
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
+                  onPress={handleResetPassword}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={['#667eea', '#764ba2']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  {isLoading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Reset password</Text>
+                  )}
+                </TouchableOpacity>
+              </>
             )}
 
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={[
-                  styles.input,
-                  styles.inputWithEye,
-                  confirmFocused ? styles.inputFocused : null,
-                ]}
-                placeholder=""
-                placeholderTextColor="transparent"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                onFocus={() => setConfirmFocused(true)}
-                onBlur={() => setConfirmFocused(false)}
-                secureTextEntry={!showConfirmPassword}
-                autoCapitalize="none"
-                autoComplete="new-password"
-              />
-              <Text
-                style={[
-                  styles.floatingLabel,
-                  confirmFocused && styles.floatingLabelFocused,
-                  (confirmFocused || hasConfirmValue) && styles.floatingLabelActive,
-                  !confirmFocused && hasConfirmValue && styles.floatingLabelInactive,
-                ]}
-              >
-                Confirm password
-              </Text>
-              <TouchableOpacity
-                onPress={() => setShowConfirmPassword((v) => !v)}
-                style={styles.eyeButton}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Ionicons
-                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={22}
-                  color="#6B7280"
-                />
-              </TouchableOpacity>
-            </View>
-
             <TouchableOpacity
-              style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
-              onPress={handleResetPassword}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#667eea', '#764ba2']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFillObject}
-              />
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.primaryButtonText}>Reset password</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setCodeSent(false)}
+              onPress={() => {
+                setCodeSent(false);
+                setCodeEntered(false);
+                setCode('');
+              }}
               style={styles.secondaryButton}
             >
               <Text style={styles.secondaryButtonText}>Use a different email</Text>
@@ -418,6 +418,10 @@ const styles = StyleSheet.create({
   emailText: {
     fontWeight: '600',
     color: '#111827',
+  },
+  otpWrapper: {
+    marginBottom: 24,
+    width: '100%',
   },
   inputWrapper: {
     marginBottom: 16,

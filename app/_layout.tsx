@@ -2,6 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { LogBox } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
@@ -57,6 +58,14 @@ export default function RootLayout() {
     SplashScreen.preventAutoHideAsync().catch(() => {});
   }, []);
 
+  useEffect(() => {
+    // Noise from dependencies / transient backend HTML responses in development.
+    LogBox.ignoreLogs([
+      'SafeAreaView has been deprecated',
+      'JSON Parse error: Unexpected character: <',
+    ]);
+  }, []);
+
   // Validate configuration on app startup
   useEffect(() => {
     const configValidation = validateConfig();
@@ -80,14 +89,18 @@ export default function RootLayout() {
                   <Stack.Screen name="onboarding" />
                   <Stack.Screen name="auth" />
                   <Stack.Screen name="marketplace" />
+                  <Stack.Screen name="search" />
                   <Stack.Screen name="cart" />
+                  <Stack.Screen name="orders" />
                   <Stack.Screen name="wishlist" />
                   <Stack.Screen name="categories" />
-                  <Stack.Screen name="become-vendor" />
+                  <Stack.Screen name="vendor" />
                   <Stack.Screen name="product/[slug]" />
                   <Stack.Screen name="search/suggested" />
                   <Stack.Screen name="profile" />
                   <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+                  <Stack.Screen name="notifications" />
+                  <Stack.Screen name="wallet" />
                   <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
                 </Stack>
                 <StatusBar style="dark" />

@@ -1,16 +1,20 @@
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Linking, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import type { Product } from '@/lib/api/products';
 import type { SuggestedProduct } from '@/lib/api/search';
+import { formatProductCondition } from '@/lib/product-meta';
 
-const CARD_WIDTH = (Dimensions.get('window').width - 12 * 3) / 2;
+const GRID_PADDING = 16;
+const GRID_GAP = 12;
+const CARD_WIDTH = (Dimensions.get('window').width - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 type ProductCardInternal = {
   type: 'internal';
   product: Product;
   isInCart?: boolean;
+  isBusy?: boolean;
   isWishlisted?: boolean;
   onPress: () => void;
   onAddToCart?: (p: Product) => void;
@@ -33,6 +37,7 @@ export function ProductCard(props: ProductCardProps) {
     <InternalProductCard
       product={props.product}
       isInCart={props.isInCart}
+      isBusy={props.isBusy}
       isWishlisted={props.isWishlisted}
       onPress={props.onPress}
       onAddToCart={props.onAddToCart}
@@ -44,6 +49,7 @@ export function ProductCard(props: ProductCardProps) {
 function InternalProductCard({
   product,
   isInCart,
+  isBusy,
   isWishlisted,
   onPress,
   onAddToCart,
@@ -51,12 +57,14 @@ function InternalProductCard({
 }: {
   product: Product;
   isInCart?: boolean;
+  isBusy?: boolean;
   isWishlisted?: boolean;
   onPress: () => void;
   onAddToCart?: (p: Product) => void;
   onToggleWishlist?: (productId: string) => void;
 }) {
   const hasDiscount = product.discount && product.discount > 0;
+  const conditionLabel = formatProductCondition(product.condition);
   const imageUrl =
     product.image || product.images?.[0] || 'https://via.placeholder.com/400x400?text=No+Image';
 
@@ -98,6 +106,13 @@ function InternalProductCard({
             {product.name}
           </Text>
         </TouchableOpacity>
+        {conditionLabel ? (
+          <View style={styles.conditionBadge}>
+            <Text style={styles.conditionBadgeText} numberOfLines={1}>
+              {conditionLabel}
+            </Text>
+          </View>
+        ) : null}
         <Text style={styles.productVendor}>{product.vendor}</Text>
         <View style={styles.ratingContainer}>
           <Ionicons name="star" size={14} color="#FBBF24" />
@@ -114,11 +129,18 @@ function InternalProductCard({
         </View>
         {onAddToCart && (
           <TouchableOpacity
-            style={[styles.addToCartButton, isInCart && styles.addToCartButtonInCart]}
+            style={[
+              styles.addToCartButton,
+              isInCart && styles.addToCartButtonInCart,
+              isBusy && styles.addToCartButtonBusy,
+            ]}
             onPress={() => onAddToCart(product)}
             activeOpacity={0.8}
+            disabled={isBusy}
           >
-            {!isInCart ? (
+            {isBusy ? (
+              <ActivityIndicator size="small" color={isInCart ? '#667eea' : '#FFFFFF'} />
+            ) : !isInCart ? (
               <>
                 <LinearGradient
                   colors={['#667eea', '#764ba2']}
@@ -264,6 +286,19 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 2,
   },
+  conditionBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  conditionBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4F46E5',
+  },
   productVendor: {
     fontSize: 12,
     color: '#6B7280',
@@ -310,6 +345,9 @@ const styles = StyleSheet.create({
   },
   addToCartButtonInCart: {
     backgroundColor: '#E5E7EB',
+  },
+  addToCartButtonBusy: {
+    opacity: 0.7,
   },
   cartIcon: {
     marginRight: 4,

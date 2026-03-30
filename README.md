@@ -42,6 +42,36 @@ To learn more about developing your project with Expo, look at the following res
 - [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
 - [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
+## Maestro UI tests
+
+This project includes Maestro smoke tests for onboarding, auth pages, and protected-route access checks.
+
+1. Install Maestro (if not installed):
+
+   ```bash
+   brew install maestro
+   ```
+
+2. Set your app id for the installed dev build:
+
+   ```bash
+   export APP_ID=com.pricepulse.ai
+   ```
+
+3. Run tests (from `mobile/`; flows live in repo root `maestro-test/`):
+
+   ```bash
+   npm run test:maestro
+   ```
+
+You can also run suites individually:
+
+- `npm run test:maestro:auth`
+- `npm run test:maestro:products`
+- `npm run test:maestro:search`
+- `npm run test:maestro:other`
+- `npm run test:maestro:protected`
+
 ## Join the community
 
 Join our community of developers creating universal apps.

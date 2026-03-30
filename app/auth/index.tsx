@@ -17,11 +17,13 @@ import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import { GoogleLogo } from '@/components/google-logo';
+import { OTPInput } from '@/components/auth/otp-input';
 import { tokenStorage } from '@/lib/auth/storage';
 import { profileAPI } from '@/lib/api/profile';
 import { API_CONFIG } from '@/lib/config';
 
 type RememberedAccount = { email: string; username?: string; imageUrl?: string };
+type SignInStep = 'credentials' | 'second_factor';
 
 export default function AuthScreen() {
   const { isSignedIn } = useAuth();
@@ -37,6 +39,8 @@ export default function AuthScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberedAccount, setRememberedAccount] = useState<RememberedAccount | null>(null);
   const passwordInputRef = useRef<TextInput>(null);
+  const [step, setStep] = useState<SignInStep>('credentials');
+  const [otpKey, setOtpKey] = useState(0);
 
   useEffect(() => {
     if (isSignedIn) {
@@ -59,21 +63,7 @@ export default function AuthScreen() {
       });
       if (result?.createdSessionId && result?.setActive) {
         await result.setActive({ session: result.createdSessionId });
-        if (rememberMe) {
-          try {
-            const u = await profileAPI.getCurrentUser();
-            const displayName =
-              [u.profile?.firstName, u.profile?.lastName].filter(Boolean).join(' ') ||
-              u.email.split('@')[0];
-            await tokenStorage.setRememberedAccount({
-              email: u.email,
-              username: displayName || undefined,
-              imageUrl: u.profile?.avatar,
-            });
-          } catch {
-            // ignore – user is signed in
-          }
-        }
+        await saveRememberedAccount();
         router.replace('/marketplace');
       } else if (result?.authSessionResult?.type !== 'success') {
         // User cancelled or flow failed
@@ -87,6 +77,23 @@ export default function AuthScreen() {
       Alert.alert('Google sign-in failed', String(message));
     } finally {
       setIsGoogleLoading(false);
+    }
+  };
+
+  const saveRememberedAccount = async () => {
+    if (!rememberMe) return;
+    try {
+      const u = await profileAPI.getCurrentUser();
+      const displayName =
+        [u.profile?.firstName, u.profile?.lastName].filter(Boolean).join(' ') ||
+        u.email.split('@')[0];
+      await tokenStorage.setRememberedAccount({
+        email: u.email,
+        username: displayName || undefined,
+        imageUrl: u.profile?.avatar,
+      });
+    } catch {
+      // best-effort
     }
   };
 
@@ -105,27 +112,27 @@ export default function AuthScreen() {
     try {
       const result = await signIn.create({
         identifier: email.trim(),
-        strategy: 'password',
         password,
       });
+
       if (result.status === 'complete' && result.createdSessionId) {
         await setActive({ session: result.createdSessionId });
-        if (rememberMe) {
-          try {
-            const u = await profileAPI.getCurrentUser();
-            const displayName =
-              [u.profile?.firstName, u.profile?.lastName].filter(Boolean).join(' ') ||
-              u.email.split('@')[0];
-            await tokenStorage.setRememberedAccount({
-              email: u.email,
-              username: displayName || undefined,
-              imageUrl: u.profile?.avatar,
-            });
-          } catch {
-            // ignore – user is signed in, remember me is best-effort
-          }
-        }
+        await saveRememberedAccount();
         router.replace('/marketplace');
+      } else if (result.status === 'needs_second_factor') {
+        const emailCodeFactor = result.supportedSecondFactors?.find(
+          (f: any) => f.strategy === 'email_code',
+        );
+        if (emailCodeFactor) {
+          await signIn.prepareSecondFactor({
+            strategy: 'email_code',
+            emailAddressId: emailCodeFactor.emailAddressId,
+          });
+        }
+        setStep('second_factor');
+        setOtpKey((k) => k + 1);
+      } else if (result.status === 'needs_first_factor') {
+        Alert.alert('Error', 'Additional verification is required. Please try again or use Google sign-in.');
       } else {
         Alert.alert('Error', 'Sign-in could not be completed. Please try again.');
       }
@@ -142,6 +149,40 @@ export default function AuthScreen() {
     }
   };
 
+  const handleSecondFactor = async (code: string) => {
+    if (!isLoaded || !signIn) return;
+    if (!code || code.length !== 6) {
+      Alert.alert('Error', 'Please enter the 6-digit verification code');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await signIn.attemptSecondFactor({
+        strategy: 'email_code',
+        code: code.trim(),
+      });
+
+      if (result.status === 'complete' && result.createdSessionId) {
+        await setActive({ session: result.createdSessionId });
+        await saveRememberedAccount();
+        router.replace('/marketplace');
+      } else {
+        Alert.alert('Error', 'Verification could not be completed. Please try again.');
+      }
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === 'object' && 'errors' in err
+          ? (err as { errors: Array<{ message?: string }> }).errors?.[0]?.message
+          : err instanceof Error
+            ? err.message
+            : 'Invalid verification code. Please try again.';
+      Alert.alert('Verification failed', String(message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const hasEmailValue = email.length > 0;
   const hasPasswordValue = password.length > 0;
 
@@ -153,6 +194,47 @@ export default function AuthScreen() {
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
       </View>
+    );
+  }
+
+  if (step === 'second_factor') {
+    return (
+      <KeyboardAvoidingView style={styles.container} behavior="padding">
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="on-drag"
+        >
+          <View style={styles.formContainer}>
+            <Text style={styles.title}>Verify your identity</Text>
+            <Text style={styles.subtitle}>
+              We sent a verification code to your email. Enter it below to continue.
+            </Text>
+            <OTPInput
+              key={otpKey}
+              length={6}
+              onComplete={handleSecondFactor}
+              autoFocus
+              disabled={isLoading}
+            />
+            {isLoading && (
+              <ActivityIndicator size="large" color="#667eea" style={{ marginVertical: 24 }} />
+            )}
+            <TouchableOpacity
+              onPress={() => {
+                setStep('credentials');
+                setOtpKey((k) => k + 1);
+              }}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>
+                ← Back to <Text style={styles.secondaryButtonLink}>Sign In</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 

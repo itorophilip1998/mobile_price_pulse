@@ -1,19 +1,13 @@
 import axios from 'axios';
 import { API_CONFIG } from '../config';
-import { getClerkToken } from '../clerk-token';
+import { attachAuthInterceptors } from './auth-interceptor';
 
 const client = axios.create({
-  baseURL: `${API_CONFIG.BASE_URL}/reviews`,
+  baseURL: API_CONFIG.BASE_URL.replace(/\/+$/, ''),
   timeout: API_CONFIG.TIMEOUT,
 });
 
-client.interceptors.request.use(async (config) => {
-  const token = await getClerkToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+attachAuthInterceptors(client);
 
 export interface Review {
   id: string;
@@ -67,29 +61,29 @@ export const reviewsAPI = {
     page: number = 1,
     limit: number = 10,
   ): Promise<ReviewsResponse> {
-    const response = await client.get(`/product/${productId}`, {
+    const response = await client.get(`/reviews/product/${productId}`, {
       params: { page, limit },
     });
     return response.data;
   },
 
   async getProductRatingStats(productId: string): Promise<RatingStats> {
-    const response = await client.get(`/product/${productId}/stats`);
+    const response = await client.get(`/reviews/product/${productId}/stats`);
     return response.data;
   },
 
   async createReview(productId: string, data: CreateReviewDto): Promise<Review> {
-    const response = await client.post(`/product/${productId}`, data);
+    const response = await client.post(`/reviews/product/${productId}`, data);
     return response.data;
   },
 
   async updateReview(productId: string, data: CreateReviewDto): Promise<Review> {
-    const response = await client.put(`/product/${productId}`, data);
+    const response = await client.put(`/reviews/product/${productId}`, data);
     return response.data;
   },
 
   async deleteReview(productId: string): Promise<void> {
-    await client.delete(`/product/${productId}`);
+    await client.delete(`/reviews/product/${productId}`);
   },
 };
 
